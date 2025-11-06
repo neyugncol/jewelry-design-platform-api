@@ -1,0 +1,22 @@
+version: '3.8'
+name: jewelry-design-platform-api
+
+services:
+  api:
+    build: .
+    container_name: jewelry-design-platform-api
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=sqlite:///./data/jewelry_designer.db
+      - DEBUG=True
+    volumes:
+      - ./data:/app/data
+      - ./app:/app/app  # For development - mount code for hot reload
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  data:
+    driver: local
