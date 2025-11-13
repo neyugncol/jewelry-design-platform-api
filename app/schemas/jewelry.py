@@ -69,34 +69,26 @@ class Thickness(StrEnum):
 class JewelryProperties(BaseModel):
     """Schema for jewelry properties."""
 
-    target_audience: TargetAudience | None = Field(None, description="Target audience: men, women, unisex, couple, personalized", examples=[TargetAudience.WOMEN])
-    jewelry_type: JewelryType | None = Field(None, description="Type: ring, earring, necklace, bracelet, anklet, bangle", examples=[JewelryType.RING])
-    metal: Metal | None = Field(None, description="Metal type: 18k_gold, 14k_gold, 10k_gold, silver, platinum", examples=[Metal.SILVER])
-    gemstone: Gemstone | None = Field(None, description="Gemstone: diamond, ruby, sapphire, emerald, pearl, amethyst, topaz, garnet, aquamarine", examples=[Gemstone.DIAMOND])
-    style: Style | None = Field(None, description="Style: classic, modern, vintage, minimalist, luxury, personality, natural", examples=[Style.CLASSIC])
-    occasion: Occasion | None = Field(None, description="Occasion: wedding, engagement, casual, formal, party, daily_wear", examples=[Occasion.WEDDING])
-    color: str | None = Field(None, description="Dominant color: white gold, yellow gold, rose gold, etc.", examples=["white gold"])
-    thickness: Thickness | None = Field(None, description="Size or thickness: thin, medium, thick", examples=[Thickness.MEDIUM])
-    inspiration: str | None = Field(None, description="Inspiring story or background", examples=["vintage-inspired design"])
+    target_audience: TargetAudience | None = Field(None, description="Target audience: men, women, unisex, couple, personalized")
+    jewelry_type: JewelryType | None = Field(None, description="Type: ring, earring, necklace, bracelet, anklet, bangle")
+    metal: Metal | None = Field(None, description="Metal type: 18k_gold, 14k_gold, 10k_gold, silver, platinum")
+    gemstone: Gemstone | None = Field(None, description="Gemstone: diamond, ruby, sapphire, emerald, pearl, amethyst, topaz, garnet, aquamarine")
+    style: Style | None = Field(None, description="Style: classic, modern, vintage, minimalist, luxury, personality, natural")
+    occasion: Occasion | None = Field(None, description="Occasion: wedding, engagement, casual, formal, party, daily_wear")
+    color: str | None = Field(None, description="Dominant color: white gold, yellow gold, rose gold, etc.")
+    thickness: Thickness | None = Field(None, description="Size or thickness: thin, medium, thick")
+    inspiration: str | None = Field(None, description="Inspiring story or background")
 
 
 class JewelryBase(BaseModel):
     """Base schema for jewelry."""
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the jewelry.")
-    name: str = Field(description="Name of the jewelry.", examples=["Elegant Diamond Ring"])
-    description: str = Field(description="Detailed description of the jewelry.", examples=["A stunning diamond ring featuring a brilliant-cut diamond set in a classic gold band."])
+    name: str = Field(description="Name of the jewelry.")
+    description: str = Field(description="Detailed description of the jewelry.")
     properties: JewelryProperties = Field(description="Properties of the jewelry.")
     images: list[str] = Field(default_factory=list, description="List of image IDs for the jewelry.")
     three_d_model: str | None = Field(None, description="3D model ID for the jewelry.")
-
-
-class JewelryDesignOutput(BaseModel):
-    """Schema for jewelry design output from AI (without images/3D model)."""
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the jewelry design.")
-    name: str = Field(description="Name of the jewelry design.", examples=["Eternal Love Diamond Ring"])
-    description: str = Field(description="Detailed description of the jewelry design.", examples=["A timeless diamond engagement ring featuring a 1-carat brilliant-cut diamond set in a platinum band with delicate pavé diamonds along the sides."])
-    properties: JewelryProperties = Field(description="Properties and characteristics of the jewelry design.")
 
 
 class JewelryDesign(JewelryBase):
@@ -107,5 +99,5 @@ class JewelryDesign(JewelryBase):
 class JewelryProduct(JewelryBase):
     """Schema for a jewelry product."""
 
-    price: float = Field(description="Price of the jewelry product in VND.", examples=[45700000])
+    price: float = Field(description="Price of the jewelry product in VND.")
 

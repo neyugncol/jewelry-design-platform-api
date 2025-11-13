@@ -29,3 +29,18 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Examples output
+examples/output/*
+!examples/output/.gitkeep
+generated_image*.png
+
+# Processed products (generated)
+data/processed_products/*
+!data/processed_products/.gitkeep
+
+# Raw products (user data)
+data/raw_products/*
+!data/raw_products/.gitkeep
+!data/raw_products/README.md
+!data/raw_products/example_product_*.json

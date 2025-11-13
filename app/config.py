@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Gemini Models
     chat_model: str = "gemini-2.0-flash"
-    image_model: str = "gemini-2.5-flash-image"
+    image_model: str = "gemini-2.0-flash-preview-image-generation"
 
     # Authentication Configuration
     secret_key: str = "your-secret-key-change-this-in-production-use-openssl-rand-hex-32"
