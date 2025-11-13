@@ -160,11 +160,15 @@ Analyze the provided jewelry design and recommend the top {top_k} most similar p
 # ANALYSIS REQUIREMENTS
 1. Compare the design with EVERY product in the catalog
 2. Consider multiple factors for similarity:
-   - Jewelry type (ring, necklace, earring, etc.)
-   - Style (classic, modern, vintage, minimalist, luxury, etc.)
-   - Metal type and color
-   - Gemstones used
-   - Occasion and target audience
+   - Target Audience: men, women, unisex, couple, personalized
+   - Jewelry Type: ring, bracelet, bangle, necklace, earring, anklet
+   - Metal Type: 24k_gold, 22k_gold, 18k_gold, 14k_gold, 10k_gold, silver, platinum
+   - Color Tone: white, yellow, rose
+   - Gemstones: diamond, sapphire, emerald, amethyst, ruby, citrine, tourmaline, topaz, garnet, peridot, spinel, cubic_zirconia, aquamarine, opal, moonstone, pearl
+   - Gemstone Shape: round, oval, marquise, pear, heart, radiant, emerald, cushion, princess
+   - Style: classic, modern, vintage, minimalist, luxury, personality, natural
+   - Occasion: wedding, engagement, casual, formal, party, daily_wear
+   - Weight and size specifications
    - Overall aesthetic and inspiration
    - Price range compatibility
 
@@ -207,16 +211,20 @@ If no products meet the minimum similarity threshold, return an empty recommenda
             lines.append(f"  - Type: {props.jewelry_type}")
         if props.metal:
             lines.append(f"  - Metal: {props.metal}")
+        if props.color:
+            lines.append(f"  - Color Tone: {props.color}")
+        if props.weight:
+            lines.append(f"  - Weight: {props.weight}g")
         if props.gemstone:
             lines.append(f"  - Gemstone: {props.gemstone}")
+        if props.shape:
+            lines.append(f"  - Gemstone Shape: {props.shape}")
+        if props.size:
+            lines.append(f"  - Gemstone Size: {props.size} carats")
         if props.style:
             lines.append(f"  - Style: {props.style}")
         if props.occasion:
             lines.append(f"  - Occasion: {props.occasion}")
-        if props.color:
-            lines.append(f"  - Color: {props.color}")
-        if props.thickness:
-            lines.append(f"  - Thickness: {props.thickness}")
         if props.inspiration:
             lines.append(f"  - Inspiration: {props.inspiration}")
 
@@ -243,16 +251,20 @@ If no products meet the minimum similarity threshold, return an empty recommenda
                 product_info.append(f"  - Type: {props.jewelry_type}")
             if props.metal:
                 product_info.append(f"  - Metal: {props.metal}")
+            if props.color:
+                product_info.append(f"  - Color Tone: {props.color}")
+            if props.weight:
+                product_info.append(f"  - Weight: {props.weight}g")
             if props.gemstone:
                 product_info.append(f"  - Gemstone: {props.gemstone}")
+            if props.shape:
+                product_info.append(f"  - Shape: {props.shape}")
+            if props.size:
+                product_info.append(f"  - Size: {props.size} carats")
             if props.style:
                 product_info.append(f"  - Style: {props.style}")
             if props.occasion:
                 product_info.append(f"  - Occasion: {props.occasion}")
-            if props.color:
-                product_info.append(f"  - Color: {props.color}")
-            if props.thickness:
-                product_info.append(f"  - Thickness: {props.thickness}")
 
             product_lines.append("\n".join(product_info))
 

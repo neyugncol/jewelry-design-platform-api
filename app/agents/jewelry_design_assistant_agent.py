@@ -17,7 +17,7 @@ Use the appropriate tool when needed to provide accurate information.
 """.strip()
 
 
-class AssistantAgent:
+class JewelryDesignAssistantAgent:
     """Assistant agent with tool-use capabilities."""
 
     def __init__(

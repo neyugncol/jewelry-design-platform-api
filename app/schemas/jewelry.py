@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class TargetAudience(StrEnum):
+    """Target audience for jewelry products."""
     MEN = "men"
     WOMEN = "women"
     UNISEX = "unisex"
@@ -13,15 +14,19 @@ class TargetAudience(StrEnum):
 
 
 class JewelryType(StrEnum):
+    """Type of jewelry item."""
     RING = "ring"
-    EARRING = "earring"
-    NECKLACE = "necklace"
     BRACELET = "bracelet"
-    ANKLET = "anklet"
     BANGLE = "bangle"
+    NECKLACE = "necklace"
+    EARRING = "earring"
+    ANKLET = "anklet"
 
 
 class Metal(StrEnum):
+    """Type of metal used in jewelry."""
+    GOLD_24K = "24k_gold"
+    GOLD_22K = "22k_gold"
     GOLD_18K = "18k_gold"
     GOLD_14K = "14k_gold"
     GOLD_10K = "10k_gold"
@@ -29,19 +34,48 @@ class Metal(StrEnum):
     PLATINUM = "platinum"
 
 
+class ColorTone(StrEnum):
+    """Color tone of the metal."""
+    WHITE = "white"
+    YELLOW = "yellow"
+    ROSE = "rose"
+
+
 class Gemstone(StrEnum):
+    """Type of gemstone used in jewelry."""
     DIAMOND = "diamond"
-    RUBY = "ruby"
     SAPPHIRE = "sapphire"
     EMERALD = "emerald"
-    PEARL = "pearl"
     AMETHYST = "amethyst"
+    RUBY = "ruby"
+    CITRINE = "citrine"
+    TOURMALINE = "tourmaline"
     TOPAZ = "topaz"
     GARNET = "garnet"
+    PERIDOT = "peridot"
+    SPINEL = "spinel"
+    CUBIC_ZIRCONIA = "cubic_zirconia"
     AQUAMARINE = "aquamarine"
+    OPAL = "opal"
+    MOONSTONE = "moonstone"
+    PEARL = "pearl"
+
+
+class Shape(StrEnum):
+    """Shape of gemstone."""
+    ROUND = "round"
+    OVAL = "oval"
+    MARQUISE = "marquise"
+    PEAR = "pear"
+    HEART = "heart"
+    RADIANT = "radiant"
+    EMERALD = "emerald"
+    CUSHION = "cushion"
+    PRINCESS = "princess"
 
 
 class Style(StrEnum):
+    """Style of jewelry design."""
     CLASSIC = "classic"
     MODERN = "modern"
     VINTAGE = "vintage"
@@ -52,6 +86,7 @@ class Style(StrEnum):
 
 
 class Occasion(StrEnum):
+    """Occasion for wearing the jewelry."""
     WEDDING = "wedding"
     ENGAGEMENT = "engagement"
     CASUAL = "casual"
@@ -60,24 +95,20 @@ class Occasion(StrEnum):
     DAILY_WEAR = "daily_wear"
 
 
-class Thickness(StrEnum):
-    THIN = "thin"
-    MEDIUM = "medium"
-    THICK = "thick"
-
-
 class JewelryProperties(BaseModel):
     """Schema for jewelry properties."""
 
     target_audience: TargetAudience | None = Field(None, description="Target audience: men, women, unisex, couple, personalized")
-    jewelry_type: JewelryType | None = Field(None, description="Type: ring, earring, necklace, bracelet, anklet, bangle")
-    metal: Metal | None = Field(None, description="Metal type: 18k_gold, 14k_gold, 10k_gold, silver, platinum")
-    gemstone: Gemstone | None = Field(None, description="Gemstone: diamond, ruby, sapphire, emerald, pearl, amethyst, topaz, garnet, aquamarine")
-    style: Style | None = Field(None, description="Style: classic, modern, vintage, minimalist, luxury, personality, natural")
-    occasion: Occasion | None = Field(None, description="Occasion: wedding, engagement, casual, formal, party, daily_wear")
-    color: str | None = Field(None, description="Dominant color: white gold, yellow gold, rose gold, etc.")
-    thickness: Thickness | None = Field(None, description="Size or thickness: thin, medium, thick")
-    inspiration: str | None = Field(None, description="Inspiring story or background")
+    jewelry_type: JewelryType | None = Field(None, description="Type of jewelry: ring, bracelet, bangle, necklace, earring, anklet")
+    metal: Metal | None = Field(None, description="Metal type: 24k_gold, 22k_gold, 18k_gold, 14k_gold, 10k_gold, silver, platinum")
+    color: ColorTone | None = Field(None, description="Color tone of the metal: white, yellow, rose")
+    weight: float | None = Field(None, description="Weight of the metal in grams")
+    gemstone: Gemstone | None = Field(None, description="Type of gemstone: diamond, sapphire, emerald, amethyst, ruby, citrine, tourmaline, topaz, garnet, peridot, spinel, cubic_zirconia, aquamarine, opal, moonstone, pearl")
+    shape: Shape | None = Field(None, description="Shape of the gemstone: round, oval, marquise, pear, heart, radiant, emerald, cushion, princess")
+    size: float | None = Field(None, description="Size of the gemstone in carats")
+    style: Style | None = Field(None, description="Style of jewelry design: classic, modern, vintage, minimalist, luxury, personality, natural")
+    occasion: Occasion | None = Field(None, description="Occasion for wearing the jewelry: wedding, engagement, casual, formal, party, daily_wear")
+    inspiration: str | None = Field(None, description="Inspiring story or background for the jewelry design")
 
 
 class JewelryBase(BaseModel):

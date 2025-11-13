@@ -23,7 +23,18 @@ Consider the following when creating designs:
 Output a comprehensive jewelry design with:
 - A creative and meaningful name
 - Detailed description including materials, gemstones, and craftsmanship
-- Complete properties (target audience, type, metal, gemstone, style, occasion, color, thickness, inspiration)
+- Complete properties including:
+  * Target audience: men, women, unisex, couple, personalized
+  * Jewelry type: ring, bracelet, bangle, necklace, earring, anklet
+  * Metal: 24k_gold, 22k_gold, 18k_gold, 14k_gold, 10k_gold, silver, platinum
+  * Color tone: white, yellow, rose
+  * Weight (in grams)
+  * Gemstone: diamond, sapphire, emerald, amethyst, ruby, citrine, tourmaline, topaz, garnet, peridot, spinel, cubic_zirconia, aquamarine, opal, moonstone, pearl
+  * Shape: round, oval, marquise, pear, heart, radiant, emerald, cushion, princess
+  * Size (in carats)
+  * Style: classic, modern, vintage, minimalist, luxury, personality, natural
+  * Occasion: wedding, engagement, casual, formal, party, daily_wear
+  * Inspiration story
 
 Be specific and detailed in your descriptions to guide the craftsmen and ensure customer satisfaction.
 """.strip()
@@ -165,7 +176,17 @@ Ensure the design:
 - Has a meaningful name that resonates with the inspiration or occasion
 - Includes comprehensive technical details for production
 
-Generate a complete jewelry design with all properties filled out.
+Select appropriate values from the available property options:
+- Target Audience: men, women, unisex, couple, personalized
+- Jewelry Type: ring, bracelet, bangle, necklace, earring, anklet
+- Metal: 24k_gold, 22k_gold, 18k_gold, 14k_gold, 10k_gold, silver, platinum
+- Color Tone: white, yellow, rose
+- Gemstone: diamond, sapphire, emerald, amethyst, ruby, citrine, tourmaline, topaz, garnet, peridot, spinel, cubic_zirconia, aquamarine, opal, moonstone, pearl
+- Gemstone Shape: round, oval, marquise, pear, heart, radiant, emerald, cushion, princess
+- Style: classic, modern, vintage, minimalist, luxury, personality, natural
+- Occasion: wedding, engagement, casual, formal, party, daily_wear
+
+Generate a complete jewelry design with all applicable properties filled out.
 """)
 
         return "\n".join(prompt_parts)

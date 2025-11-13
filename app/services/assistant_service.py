@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.agents.assistant_agent import AssistantAgent
+from app.agents.jewelry_design_assistant_agent import JewelryDesignAssistantAgent
 from app.config import settings
 from app.models.conversation import Conversation
 from app.models.message import Message as MessageModel
@@ -38,7 +38,7 @@ class AssistantService:
 
     def __init__(self):
         """Initialize Assistant Agent."""
-        self.assistant_agent = AssistantAgent(
+        self.assistant_agent = JewelryDesignAssistantAgent(
             model=settings.chat_model,
         )
 
