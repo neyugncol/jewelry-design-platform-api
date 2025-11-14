@@ -1,4 +1,6 @@
 """Main FastAPI application."""
+import logging
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +9,9 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.db.database import init_db
 from app.api import users, chat, conversations, images
+
+
+logging.basicConfig(level=logging.INFO if not settings.debug else logging.DEBUG)
 
 
 @asynccontextmanager
@@ -34,7 +39,8 @@ app = FastAPI(
 
     Powered by Google Gemini Flash 2.0 and Gemini 2.5 Flash Image.
     """,
-    lifespan=lifespan
+    lifespan=lifespan,
+    debug=True
 )
 
 # Configure CORS
@@ -75,9 +81,12 @@ async def health_check():
 
 
 if __name__ == "__main__":
+    log_config = uvicorn.config.LOGGING_CONFIG
+    log_config["disable_existing_loggers"] = False
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8080,
         log_level='info' if not settings.debug else 'debug',
+        log_config=log_config
     )

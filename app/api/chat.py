@@ -61,7 +61,8 @@ async def chat(
         # Process chat through assistant service
         response = await assistant_service.chat(
             db=db,
-            chat_request=request
+            chat_request=request,
+            user_id=current_user.id
         )
         return response
 

@@ -221,10 +221,10 @@ class ProductFactory:
         agent = JewelryRecommendationAgent.__new__(JewelryRecommendationAgent)
 
         # Initialize agent attributes
-        from app.config import settings
+        from app.config import settings, api_key_pool
         import google.genai as genai
 
-        agent.client = genai.Client(api_key=settings.gemini_api_key)
+        agent.client = genai.Client(api_key=api_key_pool.get_api_key())
         agent.model = model or settings.chat_model
         agent.products_file = None  # Not using file
         agent.products = products

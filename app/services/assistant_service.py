@@ -1,5 +1,6 @@
 """Assistant service for managing AI chat interactions."""
 import uuid
+import logging
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -11,6 +12,9 @@ from app.models.conversation import Conversation
 from app.models.message import Message as MessageModel
 from app.schemas.message import Message, ChatRequest, ChatResponse
 from app.schemas.artifact import Artifact
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class AssistantServiceError(Exception):
@@ -38,6 +42,7 @@ class AssistantService:
 
     def __init__(self):
         """Initialize Assistant Agent."""
+        logger.info("Initializing AssistantService")
         self.assistant_agent = JewelryDesignAssistantAgent(
             model=settings.chat_model,
         )
@@ -45,7 +50,8 @@ class AssistantService:
     async def chat(
         self,
         db: Session,
-        chat_request: ChatRequest
+        chat_request: ChatRequest,
+        user_id: str
     ) -> ChatResponse:
         """
         Process a chat request and return response.
@@ -53,6 +59,7 @@ class AssistantService:
         Args:
             db: Database session
             chat_request: Chat request containing conversation_id, message, images, artifact
+            user_id: ID of the user making the request
 
         Returns:
             ChatResponse with user message and assistant response
@@ -62,15 +69,31 @@ class AssistantService:
             DatabaseError: If database operations fail
             AgentError: If agent execution fails
         """
+        logger.info(f"Processing chat request for conversation: {chat_request.conversation_id}")
+        logger.debug(f"User ID: {user_id}, Message length: {len(chat_request.message)} chars")
+
         try:
             # Verify conversation exists
             conversation = self._get_conversation(db, chat_request.conversation_id)
             if not conversation:
+                logger.error(f"Conversation not found: {chat_request.conversation_id}")
                 raise ConversationNotFoundError(
                     f"Conversation {chat_request.conversation_id} not found"
                 )
 
+            # Get user information for personalization
+            from app.models.user import User as UserModel
+            user_db = db.query(UserModel).filter(UserModel.id == user_id).first()
+            user_schema = None
+            if user_db:
+                from app.schemas.user import User as UserSchema
+                user_schema = UserSchema.model_validate(user_db, from_attributes=True)
+                logger.debug(f"User profile: {user_schema.name}, segment: {user_schema.segment}")
+            else:
+                logger.warning(f"User not found: {user_id}")
+
             # Create and save user message
+            logger.debug("Creating user message")
             user_message = await self._create_user_message(
                 db=db,
                 conversation_id=chat_request.conversation_id,
@@ -83,22 +106,50 @@ class AssistantService:
             conversation_messages = self._get_conversation_messages(
                 db, chat_request.conversation_id
             )
+            logger.debug(f"Retrieved {len(conversation_messages)} messages from conversation")
 
-            # Run assistant agent
+            # Run assistant agent with user info
+            logger.info("Invoking assistant agent")
             try:
                 agent_result = await self.assistant_agent.run(
                     messages=conversation_messages,
-                    enable_tools=True
+                    user=user_schema
                 )
+                logger.info(f"Agent completed in {agent_result.get('iterations')} iterations")
             except Exception as e:
+                logger.exception("Agent execution failed")
                 raise AgentError(f"Agent execution failed: {str(e)}") from e
 
-            # Create and save assistant message
+            # Extract artifact from agent result
+            artifact_data = agent_result.get("artifact")
+            artifact_schema = None
+            if artifact_data:
+                # Convert dict to appropriate Artifact type
+                from app.schemas.artifact import JewelryDesignArtifact, ProductRecommendationArtifact
+
+                artifact_type = artifact_data.get("type")
+                logger.debug(f"Processing artifact of type: {artifact_type}")
+
+                try:
+                    if artifact_type == "design":
+                        artifact_schema = JewelryDesignArtifact(**artifact_data)
+                        logger.debug(f"Created JewelryDesignArtifact: {artifact_schema.design.name}")
+                    elif artifact_type == "recommendation":
+                        artifact_schema = ProductRecommendationArtifact(**artifact_data)
+                        logger.debug(f"Created ProductRecommendationArtifact: {len(artifact_schema.products)} products")
+                except Exception as e:
+                    # If validation fails, keep as dict
+                    logger.warning(f"Artifact validation failed: {str(e)}, keeping as dict")
+                    artifact_schema = artifact_data
+
+            # Create and save assistant message with artifact
+            logger.debug("Creating assistant message")
             assistant_message = await self._create_assistant_message(
                 db=db,
                 conversation_id=chat_request.conversation_id,
-                content=agent_result.get("content", ""),
+                content=agent_result.get("message", ""),
                 tool_calls=agent_result.get("tool_calls", []),
+                artifact=artifact_schema,
                 meta={
                     "iterations": agent_result.get("iterations"),
                     "warning": agent_result.get("warning"),
@@ -109,6 +160,7 @@ class AssistantService:
             # Update conversation timestamp
             self._update_conversation_timestamp(db, conversation)
 
+            logger.info(f"Chat request completed successfully for conversation: {chat_request.conversation_id}")
             return ChatResponse(
                 conversation_id=chat_request.conversation_id,
                 user_message=self._convert_db_message_to_schema(user_message),
@@ -116,13 +168,17 @@ class AssistantService:
             )
 
         except ConversationNotFoundError:
+            logger.error(f"Conversation not found: {chat_request.conversation_id}")
             raise
-        except AgentError:
+        except AgentError as e:
+            logger.error(f"Agent error: {str(e)}")
             raise
         except SQLAlchemyError as e:
+            logger.exception("Database error during chat processing")
             db.rollback()
             raise DatabaseError(f"Database error: {str(e)}") from e
         except Exception as e:
+            logger.exception("Unexpected error during chat processing")
             db.rollback()
             raise AssistantServiceError(f"Unexpected error: {str(e)}") from e
 

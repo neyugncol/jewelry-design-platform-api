@@ -2,12 +2,16 @@
 """Jewelry 2D design agent using Gemini for product image generation."""
 from typing import Optional
 import base64
+import logging
 import google.genai as genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from app.config import settings, api_key_pool
 from app.agents.concept_design_agent import JewelryDesignOutput
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class GeneratedImage2D(BaseModel):
@@ -54,8 +58,10 @@ class Jewelry2DDesignAgent:
         Args:
             model: Gemini image model to use. Defaults to settings.image_model
         """
-        self.client = genai.Client(api_key=settings.gemini_api_key)
-        self.model = model or settings.image_model
+        image_model = model or settings.image_model
+        logger.info(f"Initializing Jewelry2DDesignAgent with model: {image_model}")
+        self.client = genai.Client(api_key=api_key_pool.get_api_key())
+        self.model = image_model
 
     async def run(
         self,
@@ -78,6 +84,12 @@ class Jewelry2DDesignAgent:
         Returns:
             JewelryDesign2DOutput containing all generated images with metadata
         """
+        logger.info(f"Starting 2D image generation for design: {design.name}")
+        if reference_images:
+            logger.debug(f"Including {len(reference_images)} reference images")
+        if style_context:
+            logger.debug(f"Style context: {style_context}")
+
         # Initialize conversation history for this run
         conversation_history = []
 
@@ -89,6 +101,9 @@ class Jewelry2DDesignAgent:
 
         # Generate each view sequentially to maintain consistency
         for view_config in self.VIEWS:
+            view_type = view_config["type"]
+            logger.info(f"Generating {view_type} view image ({len(generated_images) + 1}/3)")
+
             # Build prompt for this specific view
             prompt = self._build_view_prompt(
                 design=design,
@@ -98,6 +113,7 @@ class Jewelry2DDesignAgent:
             )
 
             # Generate the image
+            logger.debug(f"Calling Gemini API for {view_type} view")
             image_data, conversation_history = await self._generate_image(
                 prompt=prompt,
                 conversation_history=conversation_history,
@@ -112,7 +128,9 @@ class Jewelry2DDesignAgent:
                 mime_type="image/png"
             )
             generated_images.append(generated_image)
+            logger.info(f"Successfully generated {view_type} view")
 
+        logger.info(f"Completed 2D generation: {len(generated_images)} images for {design.name}")
         return JewelryDesign2DOutput(
             images=generated_images,
             design_name=design.name,
@@ -288,10 +306,12 @@ class Jewelry2DDesignAgent:
                         break
 
         if not image_bytes:
+            logger.error("No image bytes returned from Gemini API")
             raise ValueError(f"Failed to generate image. Response: {response}")
 
         # Convert bytes to base64 for storage
         image_data_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        logger.debug(f"Generated image size: {len(image_bytes)} bytes")
 
         # Add the assistant's response to conversation history for context
         # Keep bytes in history for next generation

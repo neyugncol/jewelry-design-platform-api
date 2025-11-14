@@ -2,12 +2,16 @@
 from typing import Optional
 from pathlib import Path
 import json
+import logging
 import google.genai as genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from app.config import settings, api_key_pool
 from app.schemas.jewelry import JewelryProduct, JewelryDesign
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 class ProductRecommendation(BaseModel):
@@ -30,40 +34,67 @@ class JewelryRecommendationAgent:
 
     def __init__(
         self,
-        model: str = None,
-        products_file: str = "data/mock_products.json"
+        model: str = "gemini-2.5-flash",
+        products_dir: str = "data/processed_products"
     ):
         """
         Initialize the recommendation agent.
 
         Args:
             model: Gemini model to use. Defaults to settings.chat_model
-            products_file: Path to JSON file containing product data
+            products_dir: Path to directory containing product JSON files
         """
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        logger.info(f"Initializing JewelryRecommendationAgent with model: {model or settings.chat_model}")
+        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = model or settings.chat_model
-        self.products_file = Path(products_file)
+        self.products_dir = Path(products_dir)
         self.products: list[JewelryProduct] = []
 
         # Load products on initialization
         self._load_products()
 
     def _load_products(self) -> None:
-        """Load jewelry products from JSON file."""
-        if not self.products_file.exists():
+        """Load jewelry products from JSON files in directory."""
+        logger.info(f"Loading products from: {self.products_dir}")
+
+        if not self.products_dir.exists():
+            logger.error(f"Products directory not found: {self.products_dir}")
             raise FileNotFoundError(
-                f"Products file not found: {self.products_file}. "
-                f"Please ensure the mock_products.json file exists."
+                f"Products directory not found: {self.products_dir}. "
+                f"Please ensure the directory exists."
             )
 
-        with open(self.products_file, 'r', encoding='utf-8') as f:
-            products_data = json.load(f)
+        if not self.products_dir.is_dir():
+            logger.error(f"Path is not a directory: {self.products_dir}")
+            raise ValueError(f"Path is not a directory: {self.products_dir}")
 
-        # Convert to JewelryProduct objects
-        self.products = [JewelryProduct(**product) for product in products_data]
+        # Get all JSON files from the directory
+        json_files = list(self.products_dir.glob("*.json"))
+
+        if not json_files:
+            logger.warning(f"No JSON files found in: {self.products_dir}")
+            return
+
+        # Load each product JSON file
+        self.products = []
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    product_data = json.load(f)
+
+                # Convert to JewelryProduct object
+                product = JewelryProduct(**product_data)
+                self.products.append(product)
+                logger.debug(f"Loaded product: {product.id} - {product.name}")
+            except Exception as e:
+                logger.error(f"Error loading product from {json_file}: {e}")
+                # Continue loading other products even if one fails
+                continue
+
+        logger.info(f"Successfully loaded {len(self.products)} products from catalog")
 
     def reload_products(self) -> None:
-        """Reload products from file (useful if products are updated)."""
+        """Reload products from directory (useful if products are updated)."""
         self._load_products()
 
     async def recommend(
@@ -87,13 +118,19 @@ class JewelryRecommendationAgent:
             List of JewelryProduct objects sorted by similarity (most similar first).
             Returns empty list if no products meet the minimum similarity threshold.
         """
+        logger.info(f"Starting recommendation for design: {design.name}")
+        logger.debug(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
+        logger.debug(f"Available products in catalog: {len(self.products)}")
+
         if not self.products:
+            logger.warning("No products available in catalog")
             return []
 
         # Build the analysis prompt
         prompt = self._build_recommendation_prompt(design, top_k, min_similarity)
 
         # Get recommendations from Gemini using structured output
+        logger.info(f"Calling Gemini API for recommendations (model: {self.model})")
         response = await self.client.aio.models.generate_content(
             model=self.model,
             contents=[{
@@ -103,7 +140,10 @@ class JewelryRecommendationAgent:
             config=types.GenerateContentConfig(
                 temperature=0.3,  # Lower temperature for more focused analysis
                 response_mime_type="application/json",
-                response_schema=RecommendationOutput
+                response_schema=RecommendationOutput,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=1000
+                )
             )
         )
 
@@ -120,7 +160,11 @@ class JewelryRecommendationAgent:
                 if rec.product_id in product_dict:
                     product = product_dict[rec.product_id]
                     similar_products.append(product)
+                    logger.debug(f"Recommended: {product.name} (similarity: {rec.similarity_score:.2f})")
+                else:
+                    logger.warning(f"Product ID {rec.product_id} not found in catalog")
 
+        logger.info(f"Returning {len(similar_products)} recommended products")
         return similar_products
 
     def _build_recommendation_prompt(

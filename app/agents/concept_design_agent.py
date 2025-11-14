@@ -1,12 +1,17 @@
 """Jewelry design agent using Gemini for structured output generation."""
 from typing import Optional
+import logging
 import google.genai as genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from agents.schemas import JewelryPropertiesSchema
+from app.config import settings, api_key_pool
 from app.schemas.user import User
 from app.schemas.jewelry import JewelryProperties
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
 You are an expert jewelry designer for PNJ Jewelry Corp, specializing in creating personalized jewelry designs.
@@ -42,22 +47,23 @@ Be specific and detailed in your descriptions to guide the craftsmen and ensure 
 
 class JewelryDesignOutput(BaseModel):
     """Schema for jewelry design output from AI (without images/3D model)."""
-    name: str = Field(description="Name of the jewelry design.", examples=["Eternal Love Diamond Ring"])
-    description: str = Field(description="Detailed description of the jewelry design.", examples=["A timeless diamond engagement ring featuring a 1-carat brilliant-cut diamond set in a platinum band with delicate pavé diamonds along the sides."])
-    properties: JewelryProperties = Field(description="Properties and characteristics of the jewelry design.")
+    name: str = Field(description="Name of the jewelry design.")
+    description: str = Field(description="Detailed description of the jewelry design.")
+    properties: JewelryPropertiesSchema = Field(description="Properties and characteristics of the jewelry design.")
 
 
 class JewelryConceptDesignAgent:
     """Agent for generating jewelry designs using Gemini AI."""
 
-    def __init__(self, model: str = "gemini-2.0-flash"):
+    def __init__(self, model: str = "gemini-2.5-flash"):
         """
         Initialize the jewelry design agent.
 
         Args:
             model: Gemini model to use for generation
         """
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        logger.info(f"Initializing JewelryConceptDesignAgent with model: {model}")
+        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = model
 
     async def run(
@@ -79,6 +85,11 @@ class JewelryConceptDesignAgent:
         Returns:
             JewelryDesignOutput with complete design specifications
         """
+        logger.info("Starting concept design generation")
+        logger.debug(f"Description length: {len(description)} chars")
+        if user:
+            logger.debug(f"User: {user.name}, segment: {user.segment}, age: {user.age}")
+
         # Build the prompt with all available information
         prompt = self._build_prompt(description, user, context)
 
@@ -87,6 +98,7 @@ class JewelryConceptDesignAgent:
 
         # Add reference images if provided
         if reference_images:
+            logger.info(f"Including {len(reference_images[:5])} reference images")
             for img_base64 in reference_images[:5]:  # Limit to 5 images
                 content_parts.append({
                     "inline_data": {
@@ -96,6 +108,7 @@ class JewelryConceptDesignAgent:
                 })
 
         # Generate design using structured output
+        logger.info(f"Calling Gemini API for concept design (model: {self.model})")
         response = self.client.models.generate_content(
             model=self.model,
             contents=[{
@@ -106,7 +119,10 @@ class JewelryConceptDesignAgent:
                 system_instruction=SYSTEM_PROMPT,
                 temperature=0.8,  # Creative but controlled
                 response_mime_type="application/json",
-                response_schema=JewelryDesignOutput
+                response_schema=JewelryDesignOutput,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=1000
+                )
             )
         )
 
@@ -117,6 +133,9 @@ class JewelryConceptDesignAgent:
         import json
         design_dict = json.loads(design_data)
         design = JewelryDesignOutput(**design_dict)
+
+        logger.info(f"Successfully generated concept design: {design.name}")
+        logger.debug(f"Design properties: type={design.properties.jewelry_type}, metal={design.properties.metal}, style={design.properties.style}")
 
         return design
 

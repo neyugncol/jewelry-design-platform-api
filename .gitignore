@@ -36,8 +36,8 @@ examples/output/*
 generated_image*.png
 
 # Processed products (generated)
-data/processed_products/*
-!data/processed_products/.gitkeep
+data/old_processed_products/*
+!data/old_processed_products/.gitkeep
 
 # Raw products (user data)
 data/raw_products/*
