@@ -45,7 +45,6 @@ class JewelryRecommendationAgent:
             products_dir: Path to directory containing product JSON files
         """
         logger.info(f"Initializing JewelryRecommendationAgent with model: {model or settings.chat_model}")
-        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = model or settings.chat_model
         self.products_dir = Path(products_dir)
         self.products: list[JewelryProduct] = []
@@ -131,7 +130,8 @@ class JewelryRecommendationAgent:
 
         # Get recommendations from Gemini using structured output
         logger.info(f"Calling Gemini API for recommendations (model: {self.model})")
-        response = await self.client.aio.models.generate_content(
+        client = genai.Client(api_key=api_key_pool.get_api_key())
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=[{
                 "role": "user",

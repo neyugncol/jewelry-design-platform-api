@@ -20,7 +20,6 @@ class JewelryPropertiesSchema(BaseModel):
 
 
 class JewelryDesignSchema(BaseModel):
-    id: str = Field(description="Unique identifier for the jewelry design")
     name: str = Field(description="Name of the jewelry design")
     description: str = Field(description="Detailed description of the jewelry design")
     properties: JewelryPropertiesSchema = Field(description="Properties of the jewelry design")
@@ -40,7 +39,6 @@ class JewelryProductSchema(BaseModel):
 
 
 class ArtifactSchema(BaseModel):
-    id: str = Field(description="Unique identifier for the artifact")
     type: Literal["design", "recommendation"] = Field(description="Type of artifact: 'design' or 'recommendation'")
-    design: JewelryDesignSchema | None = Field(description="Design object if type is 'design' else null")
-    products: list[JewelryProductSchema] | None = Field(description="List of products if type is 'recommendation' else null")
+    design: JewelryDesignSchema | None = Field(None, description="Design object if type is 'design' else null")
+    products: list[JewelryProductSchema] | None = Field(None, description="List of products if type is 'recommendation' else null")

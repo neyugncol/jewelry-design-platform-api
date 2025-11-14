@@ -60,7 +60,6 @@ class Jewelry2DDesignAgent:
         """
         image_model = model or settings.image_model
         logger.info(f"Initializing Jewelry2DDesignAgent with model: {image_model}")
-        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = image_model
 
     async def run(
@@ -283,7 +282,8 @@ class Jewelry2DDesignAgent:
         })
 
         # Generate image using Gemini
-        response = await self.client.aio.models.generate_content(
+        client = genai.Client(api_key=api_key_pool.get_api_key())
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=conversation_history,
             config=types.GenerateContentConfig(

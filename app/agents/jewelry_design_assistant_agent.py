@@ -1,4 +1,5 @@
 """Assistant agent with tool-use capabilities using Gemini API."""
+from hashlib import md5
 from typing import Any, Callable, Optional, Literal
 import json
 import uuid
@@ -337,9 +338,9 @@ Call `respond_to_user` with COMPLETE updated design:
         "inspiration": "Based on PNJ's Elegant Solitaire, customized with a larger diamond"
       },
       "images": [
-        "data:image/png;base64,iVBORw0KGgoAAAANS...",
-        "data:image/png;base64,iVBORw0KGgoAAAANS...",
-        "data:image/png;base64,iVBORw0KGgoAAAANS..."
+        "img_a1b2c3d4",
+        "img_e5f6g7h8",
+        "img_i9j0k1l2"
       ],
       "three_d_model": null
     }
@@ -374,9 +375,9 @@ Call `respond_to_user` with same complete artifact:
         "inspiration": "Based on PNJ's Elegant Solitaire, customized with a larger diamond"
       },
       "images": [
-        "data:image/png;base64,iVBORw0KGgoAAAANS...",
-        "data:image/png;base64,iVBORw0KGgoAAAANS...",
-        "data:image/png;base64,iVBORw0KGgoAAAANS..."
+        "img_a1b2c3d4",
+        "img_e5f6g7h8",
+        "img_i9j0k1l2"
       ],
       "three_d_model": null
     }
@@ -429,7 +430,6 @@ class JewelryDesignAssistantAgent:
             max_iterations: Maximum number of tool execution iterations
             user: User information for personalized responses
         """
-        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = model
         self.system_prompt = system_prompt or SYSTEM_PROMPT_TEMPLATE
         self.max_iterations = max_iterations
@@ -447,6 +447,10 @@ class JewelryDesignAssistantAgent:
 
         # Current artifact cache - stores only the current artifact (no IDs needed)
         self.current_artifact: Optional[dict[str, Any]] = None
+
+        # Image cache - stores images by ID (LLM only sees IDs, not base64 data)
+        # Key: image_id, Value: image data (base64 string or URL)
+        self.image_cache: dict[str, str] = {}
 
         # Register tools
         self._register_all_tools()
@@ -504,7 +508,8 @@ class JewelryDesignAssistantAgent:
 
                 # Call Gemini API
                 logger.info(f"Calling Gemini API (model: {self.model})")
-                response = await self.client.aio.models.generate_content(
+                client = genai.Client(api_key=api_key_pool.get_api_key())
+                response = await client.aio.models.generate_content(
                     model=self.model,
                     contents=conversation_history,
                     config=types.GenerateContentConfig(
@@ -604,10 +609,13 @@ class JewelryDesignAssistantAgent:
                         try:
                             assistant_response = AssistantResponse(**tool_args)
 
-                            # Cache the current artifact (no ID needed)
+                            # Convert artifact: LLM gives us image IDs, we need to convert to image data
                             artifact_dict = None
                             if assistant_response.artifact:
-                                artifact_dict = assistant_response.artifact.model_dump()
+                                artifact_with_ids = assistant_response.artifact.model_dump()
+                                # Replace image IDs with actual image data from cache
+                                artifact_dict = self._artifact_ids_to_images(artifact_with_ids)
+                                # Cache the artifact with full image data
                                 self.current_artifact = artifact_dict
                                 logger.debug(f"Cached current artifact: type={artifact_dict.get('type')}")
 
@@ -630,9 +638,9 @@ class JewelryDesignAssistantAgent:
                             recovered_artifact = None
 
                             if artifact_from_args and isinstance(artifact_from_args, dict):
-                                # Try to use the artifact as-is
-                                recovered_artifact = artifact_from_args
-                                logger.warning(f"Using unvalidated artifact from arguments")
+                                # Try to convert image IDs to data if present
+                                recovered_artifact = self._artifact_ids_to_images(artifact_from_args)
+                                logger.warning(f"Using unvalidated artifact from arguments (converted image IDs)")
                             elif self.current_artifact:
                                 # Fall back to cached current artifact
                                 recovered_artifact = self.current_artifact
@@ -753,12 +761,16 @@ class JewelryDesignAssistantAgent:
             # Create JewelryDesignArtifact from concept design
             design_data = result.get("design")
             if design_data:
+                # Cache images and get IDs
+                images = design_data.get("images", [])
+                image_ids = self._cache_images(images) if images else []
+
                 # Ensure all required fields are present (no IDs)
                 design_dict = {
                     "name": design_data["name"],
                     "description": design_data["description"],
                     "properties": design_data["properties"],
-                    "images": design_data.get("images", []),
+                    "images": image_ids,  # Store image IDs, not data
                     "three_d_model": design_data.get("three_d_model")
                 }
 
@@ -768,9 +780,9 @@ class JewelryDesignAssistantAgent:
                     "design": design_dict
                 }
 
-                # Cache as current artifact
+                # Cache as current artifact (with image IDs for LLM)
                 self.current_artifact = artifact
-                logger.debug(f"Cached design artifact: {design_data['name']}")
+                logger.debug(f"Cached design artifact: {design_data['name']} with {len(image_ids)} images")
 
                 return artifact
 
@@ -778,10 +790,18 @@ class JewelryDesignAssistantAgent:
             # Create ProductRecommendationArtifact from recommendations
             products = result.get("products", [])
             if products:
+                # Cache images for each product and replace with IDs
+                products_with_ids = []
+                for product in products:
+                    product_copy = product.copy()
+                    if product_copy.get("images"):
+                        product_copy["images"] = self._cache_images(product_copy["images"])
+                    products_with_ids.append(product_copy)
+
                 # Create artifact (no ID)
                 artifact = {
                     "type": "recommendation",
-                    "products": products
+                    "products": products_with_ids
                 }
 
                 # Cache as current artifact
@@ -796,12 +816,15 @@ class JewelryDesignAssistantAgent:
                 design = current_artifact["design"]
                 images = result.get("images", [])
 
-                # Update images list
-                design["images"] = images
+                # Cache images and get IDs
+                image_ids = self._cache_images(images) if images else []
+
+                # Update images list with IDs
+                design["images"] = image_ids
 
                 # Update current cache
                 self.current_artifact = current_artifact
-                logger.debug(f"Updated current artifact with 2D images")
+                logger.debug(f"Updated current artifact with {len(image_ids)} 2D images")
 
                 return current_artifact
 
@@ -821,6 +844,126 @@ class JewelryDesignAssistantAgent:
                 return current_artifact
 
         return current_artifact
+
+    def _cache_image(self, image_data: str) -> str:
+        """
+        Cache an image and return its ID.
+
+        Args:
+            image_data: Image data (base64 string or URL)
+
+        Returns:
+            Image ID
+        """
+        # Generate unique ID for this image
+        image_id = f"img_{md5(image_data.encode()).hexdigest()[:8]}"
+        self.image_cache[image_id] = image_data
+        logger.debug(f"Cached image: {image_id}")
+        return image_id
+
+    def _cache_images(self, images: list[str]) -> list[str]:
+        """
+        Cache multiple images and return their IDs.
+
+        Args:
+            images: List of image data (base64 strings or URLs)
+
+        Returns:
+            List of image IDs
+        """
+        return [self._cache_image(img) for img in images]
+
+    def _get_image(self, image_id: str) -> str | None:
+        """
+        Retrieve an image from cache by ID.
+
+        Args:
+            image_id: Image ID
+
+        Returns:
+            Image data or None if not found
+        """
+        return self.image_cache.get(image_id)
+
+    def _get_images(self, image_ids: list[str]) -> list[str]:
+        """
+        Retrieve multiple images from cache by IDs.
+
+        Args:
+            image_ids: List of image IDs
+
+        Returns:
+            List of image data (empty string for missing images)
+        """
+        return [self.image_cache.get(img_id, "") for img_id in image_ids]
+
+    def _artifact_images_to_ids(self, artifact: dict) -> dict:
+        """
+        Replace image data with IDs in artifact (before sending to LLM).
+
+        Args:
+            artifact: Artifact dict with image data
+
+        Returns:
+            Artifact dict with image IDs
+        """
+        if not artifact:
+            return artifact
+
+        artifact_copy = artifact.copy()
+
+        if artifact_copy.get("type") == "design" and artifact_copy.get("design"):
+            design = artifact_copy["design"].copy()
+            if design.get("images"):
+                # Cache images and replace with IDs
+                design["images"] = self._cache_images(design["images"])
+            artifact_copy["design"] = design
+
+        elif artifact_copy.get("type") == "recommendation" and artifact_copy.get("products"):
+            products_copy = []
+            for product in artifact_copy["products"]:
+                product_copy = product.copy()
+                if product_copy.get("images"):
+                    # Cache images and replace with IDs
+                    product_copy["images"] = self._cache_images(product_copy["images"])
+                products_copy.append(product_copy)
+            artifact_copy["products"] = products_copy
+
+        return artifact_copy
+
+    def _artifact_ids_to_images(self, artifact: dict) -> dict:
+        """
+        Replace image IDs with data from cache in artifact (after receiving from LLM).
+
+        Args:
+            artifact: Artifact dict with image IDs
+
+        Returns:
+            Artifact dict with image data
+        """
+        if not artifact:
+            return artifact
+
+        artifact_copy = artifact.copy()
+
+        if artifact_copy.get("type") == "design" and artifact_copy.get("design"):
+            design = artifact_copy["design"].copy()
+            if design.get("images"):
+                # Replace IDs with cached image data
+                design["images"] = self._get_images(design["images"])
+            artifact_copy["design"] = design
+
+        elif artifact_copy.get("type") == "recommendation" and artifact_copy.get("products"):
+            products_copy = []
+            for product in artifact_copy["products"]:
+                product_copy = product.copy()
+                if product_copy.get("images"):
+                    # Replace IDs with cached image data
+                    product_copy["images"] = self._get_images(product_copy["images"])
+                products_copy.append(product_copy)
+            artifact_copy["products"] = products_copy
+
+        return artifact_copy
 
     def _register_all_tools(self):
         """Register all available tools for jewelry design assistance."""
@@ -925,7 +1068,7 @@ class JewelryDesignAssistantAgent:
                                     "images": {
                                         "type": "array",
                                         "items": {"type": "string"},
-                                        "description": "List of image data URLs (base64)"
+                                        "description": "List of image IDs (e.g., ['img_a1b2c3d4', 'img_e5f6g7h8']). Do NOT include base64 data."
                                     },
                                     "three_d_model": {
                                         "type": "string",
@@ -1017,7 +1160,7 @@ class JewelryDesignAssistantAgent:
                                         "images": {
                                             "type": "array",
                                             "items": {"type": "string"},
-                                            "description": "Product image URLs"
+                                            "description": "List of image IDs (e.g., ['img_a1b2c3d4']). Do NOT include base64 data or URLs."
                                         },
                                         "three_d_model": {
                                             "type": "string",

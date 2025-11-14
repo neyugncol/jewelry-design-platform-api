@@ -63,7 +63,6 @@ class JewelryConceptDesignAgent:
             model: Gemini model to use for generation
         """
         logger.info(f"Initializing JewelryConceptDesignAgent with model: {model}")
-        self.client = genai.Client(api_key=api_key_pool.get_api_key())
         self.model = model
 
     async def run(
@@ -109,7 +108,8 @@ class JewelryConceptDesignAgent:
 
         # Generate design using structured output
         logger.info(f"Calling Gemini API for concept design (model: {self.model})")
-        response = self.client.models.generate_content(
+        client = genai.Client(api_key=api_key_pool.get_api_key())
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=[{
                 "role": "user",
