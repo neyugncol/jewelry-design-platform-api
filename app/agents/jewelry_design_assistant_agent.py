@@ -415,7 +415,7 @@ class JewelryDesignAssistantAgent:
 
     def __init__(
         self,
-        model: str = "google/gemini-2.5-flash",
+        model: str = "google/gemini-2.5-pro",
         system_prompt: str | None = None,
         max_iterations: int = 10,
         user: Optional[User] = None,
@@ -455,7 +455,7 @@ class JewelryDesignAssistantAgent:
 
         # Initialize specialized agents
         logger.info("Initializing JewelryDesignAssistantAgent")
-        self.concept_agent = JewelryConceptDesignAgent()
+        self.concept_agent = JewelryConceptDesignAgent(model=self.model)
         self.design_2d_agent = Jewelry2DDesignAgent()
         self.recommendation_agent = JewelryRecommendationAgent()
 

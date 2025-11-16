@@ -33,10 +33,14 @@ async def chat(
     The assistant can help design jewelry, answer questions, and generate images.
     It will automatically call tools when appropriate.
 
-    Requires authentication. The conversation must belong to the authenticated user.
+    **Auto-conversation creation**: If no conversation_id is provided or if the conversation
+    doesn't exist, a new conversation will be created automatically with a title based on
+    your first message.
+
+    Requires authentication.
 
     Args:
-        request: Chat request with conversation_id, message, optional images and artifact
+        request: Chat request with optional conversation_id, message, images and artifact
         current_user: Current authenticated user
         db: Database session
 
@@ -44,19 +48,40 @@ async def chat(
         ChatResponse with user and assistant messages
 
     Raises:
-        HTTPException: 403 if conversation doesn't belong to user, 404 if not found, 500 for errors
+        HTTPException: 403 if conversation doesn't belong to user, 500 for errors
     """
     try:
-        # Verify conversation belongs to user
-        conversation = ConversationService.get_conversation(db, request.conversation_id)
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversation not found")
+        conversation = None
 
-        if conversation.user_id != current_user.id:
-            raise HTTPException(
-                status_code=403,
-                detail="You don't have permission to access this conversation"
+        # Check if conversation_id is provided
+        if request.conversation_id:
+            # Try to get existing conversation
+            conversation = ConversationService.get_conversation(db, request.conversation_id)
+
+            # If conversation exists, verify ownership
+            if conversation and conversation.user_id != current_user.id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You don't have permission to access this conversation"
+                )
+
+        # Auto-create conversation if not provided or not found
+        if not conversation:
+            # Generate title from first message (first 50 chars)
+            title = request.message[:50]
+            if len(request.message) > 50:
+                title += "..."
+
+            # Create new conversation
+            from app.schemas.conversation import ConversationCreate
+            conversation = ConversationService.create_conversation(
+                db=db,
+                user_id=current_user.id,
+                conversation_data=ConversationCreate(title=title)
             )
+
+            # Update request with new conversation_id
+            request.conversation_id = conversation.id
 
         # Process chat through assistant service
         response = await assistant_service.chat(

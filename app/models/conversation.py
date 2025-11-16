@@ -21,4 +21,3 @@ class Conversation(Base):
     # Relationships
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
-    images = relationship("Image", back_populates="conversation", cascade="all, delete-orphan")

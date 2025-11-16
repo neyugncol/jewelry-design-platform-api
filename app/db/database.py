@@ -39,7 +39,7 @@ def get_db():
 def init_db():
     """Initialize database tables."""
     # Import all models to register them with Base.metadata
-    from app.models import User, Conversation, Message, Image
+    from app.models import User, Conversation, Message, File
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

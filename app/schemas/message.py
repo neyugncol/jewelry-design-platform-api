@@ -26,7 +26,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     """Schema for chat request."""
 
-    conversation_id: str = Field(description="ID of the conversation to send the message to")
+    conversation_id: str | None = Field(None, description="ID of the conversation to send the message to. If not provided or conversation doesn't exist, a new conversation will be created automatically.")
     message: str = Field(min_length=1, description="Text content of the user message")
     images: list[str] = Field(default_factory=list, description="List of image IDs to attach to the the message. Upload images first using the image upload endpoint.")
     artifact: Artifact | None = Field(None, description="Optional artifact to attach to the message")
