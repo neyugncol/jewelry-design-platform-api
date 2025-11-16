@@ -8,10 +8,10 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.db.database import init_db
-from app.api import users, chat, conversations, images
+from app.api import users, chat, conversations, files
 
 
-logging.basicConfig(level=logging.INFO if not settings.debug else logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
@@ -56,7 +56,7 @@ app.add_middleware(
 app.include_router(users.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
-app.include_router(images.router)
+app.include_router(files.router)
 
 
 @app.get("/")

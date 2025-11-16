@@ -10,10 +10,10 @@ from app.schemas.message import (
     ChatRequest,
     ChatResponse,
 )
-from app.schemas.image import (
-    ImageResponse,
-    ImageListResponse,
-    GeneratedImageResponse,
+from app.schemas.file import (
+    FileUploadResponse,
+    FileResponse,
+    FileListResponse,
 )
 
 __all__ = [
@@ -25,7 +25,7 @@ __all__ = [
     "Message",
     "ChatRequest",
     "ChatResponse",
-    "ImageResponse",
-    "ImageListResponse",
-    "GeneratedImageResponse",
+    "FileUploadResponse",
+    "FileResponse",
+    "FileListResponse",
 ]

@@ -1,13 +1,12 @@
-"""Jewelry recommendation agent using Gemini for similarity analysis."""
+"""Jewelry recommendation agent using OpenAI for similarity analysis."""
 from typing import Optional
 from pathlib import Path
 import json
 import logging
-import google.genai as genai
-from google.genai import types
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from app.config import settings, api_key_pool
+from app.config import settings
 from app.schemas.jewelry import JewelryProduct, JewelryDesign
 
 # Configure logger
@@ -30,24 +29,33 @@ class RecommendationOutput(BaseModel):
 
 
 class JewelryRecommendationAgent:
-    """Agent for recommending similar jewelry products using Gemini AI."""
+    """Agent for recommending similar jewelry products using OpenAI API."""
 
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = "google/gemini-2.5-flash",
         products_dir: str = "data/processed_products"
     ):
         """
         Initialize the recommendation agent.
 
         Args:
-            model: Gemini model to use. Defaults to settings.chat_model
+            model: Model to use (via FAL endpoint)
             products_dir: Path to directory containing product JSON files
         """
         logger.info(f"Initializing JewelryRecommendationAgent with model: {model or settings.chat_model}")
         self.model = model or settings.chat_model
         self.products_dir = Path(products_dir)
         self.products: list[JewelryProduct] = []
+
+        # Initialize OpenAI client with FAL endpoint
+        self.client = AsyncOpenAI(
+            api_key="",
+            base_url="https://fal.run/openrouter/router/openai/v1",
+            default_headers={
+                "Authorization": f"Key {settings.fal_key}"
+            }
+        )
 
         # Load products on initialization
         self._load_products()
@@ -84,7 +92,7 @@ class JewelryRecommendationAgent:
                 # Convert to JewelryProduct object
                 product = JewelryProduct(**product_data)
                 self.products.append(product)
-                logger.debug(f"Loaded product: {product.id} - {product.name}")
+                logger.info(f"Loaded product: {product.id} - {product.name}")
             except Exception as e:
                 logger.error(f"Error loading product from {json_file}: {e}")
                 # Continue loading other products even if one fails
@@ -118,8 +126,8 @@ class JewelryRecommendationAgent:
             Returns empty list if no products meet the minimum similarity threshold.
         """
         logger.info(f"Starting recommendation for design: {design.name}")
-        logger.debug(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
-        logger.debug(f"Available products in catalog: {len(self.products)}")
+        logger.info(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
+        logger.info(f"Available products in catalog: {len(self.products)}")
 
         if not self.products:
             logger.warning("No products available in catalog")
@@ -128,27 +136,57 @@ class JewelryRecommendationAgent:
         # Build the analysis prompt
         prompt = self._build_recommendation_prompt(design, top_k, min_similarity)
 
-        # Get recommendations from Gemini using structured output
-        logger.info(f"Calling Gemini API for recommendations (model: {self.model})")
-        client = genai.Client(api_key=api_key_pool.get_api_key())
-        response = await client.aio.models.generate_content(
+        # Get recommendations from OpenAI using structured output
+        logger.info(f"Calling OpenAI API for recommendations (model: {self.model})")
+
+        # Prepare JSON schema for structured output
+        response_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "recommendation_output",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "recommendations": {
+                            "type": "array",
+                            "description": "List of product recommendations sorted by similarity (top 3-5)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "product_id": {
+                                        "type": "string",
+                                        "description": "ID of the recommended product"
+                                    },
+                                    "similarity_score": {
+                                        "type": "number",
+                                        "description": "Similarity score from 0.0 to 1.0"
+                                    },
+                                    "reasoning": {
+                                        "type": "string",
+                                        "description": "Explanation of why this product is similar"
+                                    }
+                                },
+                                "required": ["product_id", "similarity_score", "reasoning"],
+                                "additionalProperties": False
+                            }
+                        }
+                    },
+                    "required": ["recommendations"],
+                    "additionalProperties": False
+                }
+            }
+        }
+
+        response = await self.client.chat.completions.create(
             model=self.model,
-            contents=[{
-                "role": "user",
-                "parts": [{"text": prompt}]
-            }],
-            config=types.GenerateContentConfig(
-                temperature=0.3,  # Lower temperature for more focused analysis
-                response_mime_type="application/json",
-                response_schema=RecommendationOutput,
-                thinking_config=types.ThinkingConfig(
-                    thinking_budget=1000
-                )
-            )
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,  # Lower temperature for more focused analysis
+            response_format=response_schema
         )
 
         # Parse the structured output
-        recommendations_data = json.loads(response.text)
+        recommendations_data = json.loads(response.choices[0].message.content)
         recommendations = RecommendationOutput(**recommendations_data)
 
         # Filter by minimum similarity and get product objects
@@ -160,7 +198,7 @@ class JewelryRecommendationAgent:
                 if rec.product_id in product_dict:
                     product = product_dict[rec.product_id]
                     similar_products.append(product)
-                    logger.debug(f"Recommended: {product.name} (similarity: {rec.similarity_score:.2f})")
+                    logger.info(f"Recommended: {product.name} (similarity: {rec.similarity_score:.2f})")
                 else:
                     logger.warning(f"Product ID {rec.product_id} not found in catalog")
 

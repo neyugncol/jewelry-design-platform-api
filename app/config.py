@@ -12,8 +12,14 @@ class Settings(BaseSettings):
     # Example: GEMINI_API_KEYS=key1,key2,key3
     gemini_api_keys: str = "secret"
 
+    # FAL API Configuration
+    fal_key: str = "secret"
+
     # Database Configuration
     database_url: str = "sqlite:///./data/jewelry_designer.db"
+
+    # File Upload Configuration
+    upload_directory: str = "./data/uploads"
 
     # Application Configuration
     app_name: str = "PNJ Jewelry AI Designer"
@@ -21,8 +27,8 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # Gemini Models
-    chat_model: str = "gemini-2.5-flash"
-    image_model: str = "gemini-2.0-flash-preview-image-generation"
+    chat_model: str = "google/gemini-2.5-flash"
+    image_model: str = "google/gemini-2.5-flash-image"
 
     # Authentication Configuration
     secret_key: str = "your-secret-key-change-this-in-production-use-openssl-rand-hex-32"

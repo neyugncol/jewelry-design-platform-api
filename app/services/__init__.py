@@ -1,5 +1,5 @@
 """Services layer."""
 from app.services.conversation_service import ConversationService
-from app.services.image_service import ImageService
+from app.services.file_service import FileService
 
-__all__ = ["ConversationService", "ImageService"]
+__all__ = ["ConversationService", "FileService"]

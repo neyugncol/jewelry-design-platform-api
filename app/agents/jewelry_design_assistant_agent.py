@@ -1,15 +1,14 @@
-"""Assistant agent with tool-use capabilities using Gemini API."""
+"""Assistant agent with tool-use capabilities using OpenAI API."""
 from hashlib import md5
 from typing import Any, Callable, Optional, Literal
 import json
 import uuid
 import logging
-import google.genai as genai
-from google.genai import types
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
-from agents.schemas import ArtifactSchema
-from app.config import settings, api_key_pool
+from agents.schemas import ArtifactSchema, JewelryPropertiesSchema
+from app.config import settings
 from app.schemas.message import Message
 from app.schemas.user import User
 from app.schemas.jewelry import JewelryDesign, JewelryProperties, TargetAudience, JewelryType, Metal, \
@@ -416,10 +415,12 @@ class JewelryDesignAssistantAgent:
 
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = "google/gemini-2.5-flash",
         system_prompt: str | None = None,
         max_iterations: int = 10,
-        user: Optional[User] = None
+        user: Optional[User] = None,
+        db: Optional[Any] = None,
+        user_id: Optional[str] = None
     ):
         """
         Initialize the assistant agent.
@@ -429,14 +430,27 @@ class JewelryDesignAssistantAgent:
             system_prompt: System prompt for the agent
             max_iterations: Maximum number of tool execution iterations
             user: User information for personalized responses
+            db: Database session for file service operations
+            user_id: User ID for file ownership
         """
         self.model = model
         self.system_prompt = system_prompt or SYSTEM_PROMPT_TEMPLATE
         self.max_iterations = max_iterations
         self.user = user
+        self.db = db
+        self.user_id = user_id
 
-        # Tools registry: maps tool names to their definitions and implementations
-        self.tools: dict[str, types.FunctionDeclaration] = {}
+        # Initialize OpenAI client with FAL API key
+        self.client = AsyncOpenAI(
+            api_key="",
+            base_url="https://fal.run/openrouter/router/openai/v1",
+            default_headers={
+                "Authorization": f"Key {settings.fal_key}"
+            }
+        )
+
+        # Tools registry: maps tool names to their definitions (OpenAI format)
+        self.tools: dict[str, dict[str, Any]] = {}
         self.tool_implementations: dict[str, Callable] = {}
 
         # Initialize specialized agents
@@ -460,6 +474,8 @@ class JewelryDesignAssistantAgent:
         self,
         messages: list[Message],
         user: Optional[User] = None,
+        db: Optional[Any] = None,
+        user_id: Optional[str] = None
     ) -> dict[str, Any]:
         """
         Run the assistant agent with tool-use capabilities.
@@ -467,6 +483,8 @@ class JewelryDesignAssistantAgent:
         Args:
             messages: List of conversation messages
             user: User information for personalization
+            db: Database session for file service operations
+            user_id: User ID for file ownership
 
         Returns:
             Dictionary containing:
@@ -477,10 +495,17 @@ class JewelryDesignAssistantAgent:
         """
         if user:
             self.user = user
+        if db:
+            self.db = db
+        if user_id:
+            self.user_id = user_id
 
         logger.info(f"Starting assistant run with {len(messages)} messages")
         if user:
-            logger.debug(f"User context: {user.name} (ID: {user.id}), segment: {user.segment}")
+            logger.info(f"User context: {user.name} (ID: {user.id}), segment: {user.segment}")
+
+        # Store messages for tool access (e.g., extracting reference images)
+        self.current_messages = messages
 
         # Extract current artifact state from last message
         current_artifact = self._get_current_artifact(messages)
@@ -488,9 +513,9 @@ class JewelryDesignAssistantAgent:
             artifact_type = current_artifact.get("type")
             logger.info(f"Current artifact state: {artifact_type}")
 
-        # Convert messages to Gemini format
-        conversation_history = self._convert_messages_to_gemini_format(messages)
-        logger.debug(f"Converted {len(messages)} messages to Gemini format")
+        # Convert messages to OpenAI format
+        conversation_history = self._convert_messages_to_openai_format(messages)
+        logger.info(f"Converted {len(messages)} messages to OpenAI format")
 
         all_tool_calls = []
         iterations = 0
@@ -498,38 +523,28 @@ class JewelryDesignAssistantAgent:
         # Tool execution loop
         while iterations < self.max_iterations:
             iterations += 1
-            logger.debug(f"Iteration {iterations}/{self.max_iterations}")
+            logger.info(f"Iteration {iterations}/{self.max_iterations}")
 
             # Prepare tools for API call
-            tools = [types.Tool(function_declarations=list(self.tools.values()))]
-            logger.debug(f"Available tools: {list(self.tools.keys())}")
+            tools_list = list(self.tools.values())
+            logger.info(f"Available tools: {list(self.tools.keys())}")
 
             try:
 
-                # Call Gemini API
-                logger.info(f"Calling Gemini API (model: {self.model})")
-                client = genai.Client(api_key=api_key_pool.get_api_key())
-                response = await client.aio.models.generate_content(
+                # Call OpenAI API with FAL endpoint
+                logger.info(f"Calling OpenAI API (model: {self.model})")
+                response = await self.client.chat.completions.create(
                     model=self.model,
-                    contents=conversation_history,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.system_prompt,
-                        temperature=0.8,
-                        tools=tools,
-                        tool_config=types.ToolConfig(
-                            function_calling_config=types.FunctionCallingConfig(
-                                mode=types.FunctionCallingConfigMode.ANY,
-                                allowed_function_names=list(self.tools.keys())
-                            )
-                        ),
-                        thinking_config=types.ThinkingConfig(
-                            thinking_budget=1000
-                        )
-                    )
+                    messages=[
+                        {"role": "system", "content": self.system_prompt}
+                    ] + conversation_history,
+                    temperature=0.8,
+                    tools=tools_list,
+                    tool_choice="required"  # Force tool calling (model must call respond_to_user)
                 )
 
-                if not response.candidates or len(response.candidates) == 0:
-                    logger.warning("No candidates returned from Gemini API")
+                if not response.choices or len(response.choices) == 0:
+                    logger.warning("No choices returned from OpenAI API")
                     return {
                         "message": "I apologize, but I couldn't generate a response. Could you please try again?",
                         "artifact": current_artifact,
@@ -537,44 +552,51 @@ class JewelryDesignAssistantAgent:
                         "iterations": iterations
                     }
 
-                candidate = response.candidates[0]
+                choice = response.choices[0]
+                message = choice.message
 
                 # Check if we have function calls
                 has_function_calls = False
                 function_calls = []
-                text_content = ""
+                text_content = message.content or ""
 
-                if candidate.content and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            text_content += part.text
-                        elif hasattr(part, 'function_call') and part.function_call:
-                            has_function_calls = True
-                            function_calls.append({
-                                "name": part.function_call.name,
-                                "args": dict(part.function_call.args)
-                            })
-                            logger.info(f"Tool call detected: {part.function_call.name}")
-                            logger.debug(f"Tool arguments: {dict(part.function_call.args)}")
+                if message.tool_calls:
+                    has_function_calls = True
+                    for tool_call in message.tool_calls:
+                        function_calls.append({
+                            "id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "args": json.loads(tool_call.function.arguments)
+                        })
+                        logger.info(f"Tool call detected: {tool_call.function.name}")
+                        logger.info(f"Tool arguments: {tool_call.function.arguments}")
 
                 # Add model's response to conversation
-                model_response = {"role": "model", "parts": []}
-                if text_content:
-                    model_response["parts"].append({"text": text_content})
-                for fc in function_calls:
-                    model_response["parts"].append({
-                        "function_call": {
-                            "name": fc["name"],
-                            "args": fc["args"]
+                assistant_message = {
+                    "role": "assistant",
+                    "content": text_content
+                }
+
+                if message.tool_calls:
+                    assistant_message["tool_calls"] = [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc["args"])
+                            }
                         }
-                    })
-                conversation_history.append(model_response)
+                        for tc in function_calls
+                    ]
+
+                conversation_history.append(assistant_message)
 
                 # If no function calls, the model should have called respond_to_user
                 # This is a fallback in case the model doesn't follow instructions
                 if not has_function_calls:
                     logger.warning("No function calls detected - model should have called respond_to_user")
-                    logger.debug(f"Text response length: {len(text_content)} chars")
+                    logger.info(f"Text response length: {len(text_content)} chars")
 
                     # Fallback: treat text as message and preserve current artifact
                     logger.info(f"Completed in {iterations} iterations with {len(all_tool_calls)} tool calls (fallback mode)")
@@ -587,13 +609,14 @@ class JewelryDesignAssistantAgent:
                     }
 
                 # Execute function calls
-                function_responses = []
+                tool_messages = []
                 for func_call in function_calls:
+                    tool_call_id = func_call["id"]
                     tool_name = func_call["name"]
                     tool_args = func_call["args"]
 
                     logger.info(f"Executing tool: {tool_name}")
-                    logger.debug(f"Tool args: {tool_args}")
+                    logger.info(f"Tool args: {tool_args}")
 
                     # Track tool call
                     all_tool_calls.append({
@@ -617,7 +640,7 @@ class JewelryDesignAssistantAgent:
                                 artifact_dict = self._artifact_ids_to_images(artifact_with_ids)
                                 # Cache the artifact with full image data
                                 self.current_artifact = artifact_dict
-                                logger.debug(f"Cached current artifact: type={artifact_dict.get('type')}")
+                                logger.info(f"Cached current artifact: type={artifact_dict.get('type')}")
 
                             final_result = {
                                 "message": assistant_response.message,
@@ -626,8 +649,8 @@ class JewelryDesignAssistantAgent:
                                 "iterations": iterations
                             }
                             logger.info(f"Completed in {iterations} iterations with {len(all_tool_calls)} tool calls")
-                            logger.debug(f"Message length: {len(final_result['message'])} chars")
-                            logger.debug(f"Artifact type: {final_result['artifact'].get('type') if final_result['artifact'] else 'null'}")
+                            logger.info(f"Message length: {len(final_result['message'])} chars")
+                            logger.info(f"Artifact type: {final_result['artifact'].get('type') if final_result['artifact'] else 'null'}")
                             return final_result
 
                         except Exception as e:
@@ -662,7 +685,7 @@ class JewelryDesignAssistantAgent:
 
                             if result.get("success"):
                                 logger.info(f"Tool {tool_name} executed successfully")
-                                logger.debug(f"Tool result: {result.get('message', 'No message')}")
+                                logger.info(f"Tool result: {result.get('message', 'No message')}")
                             else:
                                 logger.error(f"Tool {tool_name} failed: {result.get('error')}")
 
@@ -689,21 +712,15 @@ class JewelryDesignAssistantAgent:
                             "error": f"Unknown tool: {tool_name}"
                         }
 
-                    function_responses.append({
-                        "name": tool_name,
-                        "response": result
+                    # Add tool response message (OpenAI format)
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(result)
                     })
 
-                # Add function responses to conversation
-                user_response = {"role": "user", "parts": []}
-                for func_resp in function_responses:
-                    user_response["parts"].append({
-                        "function_response": {
-                            "name": func_resp["name"],
-                            "response": func_resp["response"]
-                        }
-                    })
-                conversation_history.append(user_response)
+                # Add tool responses to conversation history
+                conversation_history.extend(tool_messages)
 
             except Exception as e:
                 logger.exception(f"Error during assistant execution at iteration {iterations}")
@@ -736,6 +753,30 @@ class JewelryDesignAssistantAgent:
                     # Convert Pydantic model to dict
                     return message.artifact.model_dump()
         return None
+
+    def _get_reference_images_from_messages(self, messages: list[Message], limit: int = 5) -> list[str]:
+        """
+        Extract reference image file IDs from recent user messages.
+
+        Args:
+            messages: List of conversation messages
+            limit: Maximum number of images to extract
+
+        Returns:
+            List of file IDs from user messages
+        """
+        image_ids = []
+
+        # Look through recent messages (in reverse) for user-uploaded images
+        for message in reversed(messages):
+            if message.role == "user" and message.images:
+                for img_id in message.images:
+                    if img_id not in image_ids:  # Avoid duplicates
+                        image_ids.append(img_id)
+                        if len(image_ids) >= limit:
+                            return image_ids
+
+        return image_ids
 
     def _update_artifact_from_tool_result(
         self,
@@ -782,7 +823,7 @@ class JewelryDesignAssistantAgent:
 
                 # Cache as current artifact (with image IDs for LLM)
                 self.current_artifact = artifact
-                logger.debug(f"Cached design artifact: {design_data['name']} with {len(image_ids)} images")
+                logger.info(f"Cached design artifact: {design_data['name']} with {len(image_ids)} images")
 
                 return artifact
 
@@ -806,25 +847,23 @@ class JewelryDesignAssistantAgent:
 
                 # Cache as current artifact
                 self.current_artifact = artifact
-                logger.debug(f"Cached recommendation artifact with {len(products)} products")
+                logger.info(f"Cached recommendation artifact with {len(products)} products")
 
                 return artifact
 
         elif tool_name == "generate_2d_images":
-            # Update existing JewelryDesignArtifact with 2D images
+            # Update existing JewelryDesignArtifact with 2D image IDs
             if current_artifact and current_artifact.get("type") == "design":
                 design = current_artifact["design"]
-                images = result.get("images", [])
+                # Now we get image_ids directly from file service (not base64 data)
+                image_ids = result.get("image_ids", [])
 
-                # Cache images and get IDs
-                image_ids = self._cache_images(images) if images else []
-
-                # Update images list with IDs
+                # Update images list with file IDs
                 design["images"] = image_ids
 
                 # Update current cache
                 self.current_artifact = current_artifact
-                logger.debug(f"Updated current artifact with {len(image_ids)} 2D images")
+                logger.info(f"Updated current artifact with {len(image_ids)} 2D image file IDs: {image_ids}")
 
                 return current_artifact
 
@@ -839,7 +878,7 @@ class JewelryDesignAssistantAgent:
 
                     # Update current cache
                     self.current_artifact = current_artifact
-                    logger.debug(f"Updated current artifact with 3D model")
+                    logger.info(f"Updated current artifact with 3D model")
 
                 return current_artifact
 
@@ -858,7 +897,7 @@ class JewelryDesignAssistantAgent:
         # Generate unique ID for this image
         image_id = f"img_{md5(image_data.encode()).hexdigest()[:8]}"
         self.image_cache[image_id] = image_data
-        logger.debug(f"Cached image: {image_id}")
+        logger.info(f"Cached image: {image_id}")
         return image_id
 
     def _cache_images(self, images: list[str]) -> list[str]:
@@ -1271,15 +1310,23 @@ class JewelryDesignAssistantAgent:
             Dict with success status and design data
         """
         logger.info("Starting concept design generation")
-        logger.debug(f"Description: {description[:100]}...")
+        logger.info(f"Description: {description[:100]}...")
 
         try:
+            # Extract reference images from recent user messages
+            reference_image_ids = None
+            if hasattr(self, 'current_messages') and self.current_messages:
+                reference_image_ids = self._get_reference_images_from_messages(self.current_messages, limit=3)
+                if reference_image_ids:
+                    logger.info(f"Found {len(reference_image_ids)} reference images from messages: {reference_image_ids}")
+
             # Use the concept design agent
             design_output = await self.concept_agent.run(
+                db=self.db,
                 description=description,
                 user=self.user,
                 context=context,
-                reference_images=None  # TODO: Pass reference images if available
+                reference_image_ids=reference_image_ids
             )
 
             # Convert to dict (no IDs)
@@ -1323,7 +1370,7 @@ class JewelryDesignAssistantAgent:
             Dict with success status and products list
         """
         logger.info(f"Starting product recommendation for current design")
-        logger.debug(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
+        logger.info(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
 
         try:
             # Retrieve design from current artifact
@@ -1364,7 +1411,7 @@ class JewelryDesignAssistantAgent:
 
             if products_list:
                 product_names = [p.get('name', 'Unknown') for p in products_list[:3]]
-                logger.debug(f"Top products: {product_names}")
+                logger.info(f"Top products: {product_names}")
 
             return {
                 "success": True,
@@ -1395,7 +1442,7 @@ class JewelryDesignAssistantAgent:
         """
         logger.info(f"Starting 2D image generation for current design")
         if style_context:
-            logger.debug(f"Style context: {style_context}")
+            logger.info(f"Style context: {style_context}")
 
         try:
             # Retrieve design from current artifact
@@ -1420,31 +1467,38 @@ class JewelryDesignAssistantAgent:
             design_output = JewelryDesignOutput(
                 name=design_dict["name"],
                 description=design_dict["description"],
-                properties=JewelryProperties(**design_dict["properties"])
+                properties=JewelryPropertiesSchema(**design_dict["properties"])
             )
 
-            # Generate 2D images
+            # Extract reference images from recent user messages
+            reference_image_ids = None
+            if hasattr(self, 'current_messages') and self.current_messages:
+                reference_image_ids = self._get_reference_images_from_messages(self.current_messages, limit=3)
+                if reference_image_ids:
+                    logger.info(f"Found {len(reference_image_ids)} reference images for 2D generation: {reference_image_ids}")
+
+            # Generate 2D images (now returns file IDs instead of base64)
             result_2d = await self.design_2d_agent.run(
+                db=self.db,
                 design=design_output,
-                reference_images=None,
+                user_id=self.user_id,
+                reference_image_ids=reference_image_ids,
                 style_context=style_context if style_context else None
             )
 
-            # Convert images to base64 data URLs for storage
-            images_data = []
+            # Extract file IDs from generated images
+            image_ids = []
             for generated_image in result_2d.images:
-                # Store as data URL format
-                image_data_url = f"data:{generated_image.mime_type};base64,{generated_image.image_data}"
-                images_data.append(image_data_url)
+                image_ids.append(generated_image.file_id)
 
-            # Note: Images will be added to artifact cache in _update_artifact_from_tool_result
-            logger.info(f"Generated {len(images_data)} 2D images for current design")
+            # Note: Image IDs will be added to artifact in _update_artifact_from_tool_result
+            logger.info(f"Generated {len(image_ids)} 2D images for current design with IDs: {image_ids}")
 
             return {
                 "success": True,
-                "images": images_data,
-                "count": len(images_data),
-                "message": f"Generated {len(images_data)} 2D product images (front, side, top views)"
+                "image_ids": image_ids,
+                "count": len(image_ids),
+                "message": f"Generated {len(image_ids)} 2D product images (front, side, top views)"
             }
 
         except Exception as e:
@@ -1482,30 +1536,33 @@ class JewelryDesignAssistantAgent:
             parameters: JSON schema for tool parameters
             implementation: Callable that implements the tool
         """
-        # Create FunctionDeclaration for Google Gemini
-        function_declaration = types.FunctionDeclaration(
-            name=name,
-            description=description,
-            parameters=parameters
-        )
+        # Create OpenAI function format
+        function_def = {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": parameters
+            }
+        }
 
-        self.tools[name] = function_declaration
+        self.tools[name] = function_def
         self.tool_implementations[name] = implementation
 
-    def _convert_messages_to_gemini_format(
+    def _convert_messages_to_openai_format(
         self,
         messages: list[Message]
     ) -> list[dict[str, Any]]:
         """
-        Convert Message objects to Gemini format.
+        Convert Message objects to OpenAI format.
 
         Includes artifact information in the message text for LLM context.
+        Supports image inputs by loading files from file service and converting to data URLs.
         """
-        gemini_messages = []
+        openai_messages = []
 
         for msg in messages:
-            role = "user" if msg.role == "user" else "model"
-            content = {"role": role, "parts": []}
+            role = "user" if msg.role == "user" else "assistant"
 
             # Build text content with artifact context
             text_parts = []
@@ -1516,23 +1573,61 @@ class JewelryDesignAssistantAgent:
 
             # Add artifact context to help LLM understand current state
             if msg.artifact:
-                artifact_summary = self._summarize_artifact_for_context(msg.artifact)
+                # Convert image data to IDs before summarizing
+                artifact_with_ids = self._artifact_images_to_ids(
+                    msg.artifact.model_dump() if not isinstance(msg.artifact, dict) else msg.artifact
+                )
+                artifact_summary = self._summarize_artifact_for_context(artifact_with_ids)
                 if artifact_summary:
                     text_parts.append(f"\n[Current UI State: {artifact_summary}]")
 
-            if text_parts:
-                content["parts"].append({"text": "\n".join(text_parts)})
+            # Check if message has images (file IDs)
+            if msg.images and len(msg.images) > 0 and role == "user":
+                # User message with images - use OpenAI vision format
+                # Content is an array with text and image_url objects
+                content_array = []
 
-            # Add images if present (for user messages)
-            if msg.images and role == "user":
-                for image_id in msg.images[:5]:  # Limit to 5 images
-                    # TODO: Load actual image data
-                    # For now, just note that images are present
-                    pass
+                # Add text content
+                text_content = "\n".join(text_parts) if text_parts else ""
+                if text_content:
+                    content_array.append({
+                        "type": "text",
+                        "text": text_content
+                    })
 
-            gemini_messages.append(content)
+                # Add images by loading from file service
+                if self.db:
+                    from app.utils.file_utils import FileUtils
 
-        return gemini_messages
+                    logger.info(f"Loading {len(msg.images)} images for message")
+                    for file_id in msg.images:
+                        try:
+                            # Load image as data URL for vision API
+                            data_url = FileUtils.file_id_to_data_url(self.db, file_id)
+                            content_array.append({
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": data_url
+                                }
+                            })
+                            logger.info(f"Added image {file_id} to message")
+                        except Exception as e:
+                            logger.error(f"Failed to load image {file_id}: {e}")
+                            # Continue with other images even if one fails
+
+                openai_messages.append({
+                    "role": role,
+                    "content": content_array
+                })
+            else:
+                # No images or assistant message - use simple text content
+                content = "\n".join(text_parts) if text_parts else ""
+                openai_messages.append({
+                    "role": role,
+                    "content": content
+                })
+
+        return openai_messages
 
     def _summarize_artifact_for_context(self, artifact: dict | Artifact) -> str:
         """

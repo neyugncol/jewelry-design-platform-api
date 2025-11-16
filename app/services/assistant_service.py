@@ -70,7 +70,7 @@ class AssistantService:
             AgentError: If agent execution fails
         """
         logger.info(f"Processing chat request for conversation: {chat_request.conversation_id}")
-        logger.debug(f"User ID: {user_id}, Message length: {len(chat_request.message)} chars")
+        logger.info(f"User ID: {user_id}, Message length: {len(chat_request.message)} chars")
 
         try:
             # Verify conversation exists
@@ -88,12 +88,12 @@ class AssistantService:
             if user_db:
                 from app.schemas.user import User as UserSchema
                 user_schema = UserSchema.model_validate(user_db, from_attributes=True)
-                logger.debug(f"User profile: {user_schema.name}, segment: {user_schema.segment}")
+                logger.info(f"User profile: {user_schema.name}, segment: {user_schema.segment}")
             else:
                 logger.warning(f"User not found: {user_id}")
 
             # Create and save user message
-            logger.debug("Creating user message")
+            logger.info("Creating user message")
             user_message = await self._create_user_message(
                 db=db,
                 conversation_id=chat_request.conversation_id,
@@ -106,14 +106,16 @@ class AssistantService:
             conversation_messages = self._get_conversation_messages(
                 db, chat_request.conversation_id
             )
-            logger.debug(f"Retrieved {len(conversation_messages)} messages from conversation")
+            logger.info(f"Retrieved {len(conversation_messages)} messages from conversation")
 
-            # Run assistant agent with user info
+            # Run assistant agent with user info, db session, and user_id
             logger.info("Invoking assistant agent")
             try:
                 agent_result = await self.assistant_agent.run(
                     messages=conversation_messages,
-                    user=user_schema
+                    user=user_schema,
+                    db=db,
+                    user_id=user_id
                 )
                 logger.info(f"Agent completed in {agent_result.get('iterations')} iterations")
             except Exception as e:
@@ -128,22 +130,22 @@ class AssistantService:
                 from app.schemas.artifact import JewelryDesignArtifact, ProductRecommendationArtifact
 
                 artifact_type = artifact_data.get("type")
-                logger.debug(f"Processing artifact of type: {artifact_type}")
+                logger.info(f"Processing artifact of type: {artifact_type}")
 
                 try:
                     if artifact_type == "design":
                         artifact_schema = JewelryDesignArtifact(**artifact_data)
-                        logger.debug(f"Created JewelryDesignArtifact: {artifact_schema.design.name}")
+                        logger.info(f"Created JewelryDesignArtifact: {artifact_schema.design.name}")
                     elif artifact_type == "recommendation":
                         artifact_schema = ProductRecommendationArtifact(**artifact_data)
-                        logger.debug(f"Created ProductRecommendationArtifact: {len(artifact_schema.products)} products")
+                        logger.info(f"Created ProductRecommendationArtifact: {len(artifact_schema.products)} products")
                 except Exception as e:
                     # If validation fails, keep as dict
                     logger.warning(f"Artifact validation failed: {str(e)}, keeping as dict")
                     artifact_schema = artifact_data
 
             # Create and save assistant message with artifact
-            logger.debug("Creating assistant message")
+            logger.info("Creating assistant message")
             assistant_message = await self._create_assistant_message(
                 db=db,
                 conversation_id=chat_request.conversation_id,
