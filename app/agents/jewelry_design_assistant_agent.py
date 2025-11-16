@@ -415,7 +415,7 @@ class JewelryDesignAssistantAgent:
 
     def __init__(
         self,
-        model: str = "google/gemini-2.5-pro",
+        model: str = "google/gemini-2.5-flash",
         system_prompt: str | None = None,
         max_iterations: int = 10,
         user: Optional[User] = None,
@@ -981,18 +981,18 @@ class JewelryDesignAssistantAgent:
 
         if artifact_copy.get("type") == "design" and artifact_copy.get("design"):
             design = artifact_copy["design"].copy()
-            if design.get("images"):
-                # Replace IDs with cached image data
-                design["images"] = self._get_images(design["images"])
+            # if design.get("images"):
+            #     # Replace IDs with cached image data
+            #     design["images"] = self._get_images(design["images"])
             artifact_copy["design"] = design
 
         elif artifact_copy.get("type") == "recommendation" and artifact_copy.get("products"):
             products_copy = []
             for product in artifact_copy["products"]:
                 product_copy = product.copy()
-                if product_copy.get("images"):
-                    # Replace IDs with cached image data
-                    product_copy["images"] = self._get_images(product_copy["images"])
+                # if product_copy.get("images"):
+                #     # Replace IDs with cached image data
+                #     product_copy["images"] = self._get_images(product_copy["images"])
                 products_copy.append(product_copy)
             artifact_copy["products"] = products_copy
 

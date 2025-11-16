@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # Gemini Models
-    chat_model: str = "google/gemini-2.5-pro"
+    chat_model: str = "google/gemini-2.5-flash"
     image_model: str = "google/gemini-2.5-flash-image"
 
     # Authentication Configuration

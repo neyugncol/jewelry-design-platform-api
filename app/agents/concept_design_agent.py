@@ -56,7 +56,7 @@ class JewelryDesignOutput(BaseModel):
 class JewelryConceptDesignAgent:
     """Agent for generating jewelry designs using OpenAI API."""
 
-    def __init__(self, model: str = "google/gemini-2.5-pro"):
+    def __init__(self, model: str = "google/gemini-2.5-flash"):
         """
         Initialize the jewelry design agent.
 

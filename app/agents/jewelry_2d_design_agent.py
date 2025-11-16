@@ -608,17 +608,17 @@ class Jewelry2DDesignAgent:
         input_content = []
 
         # Add reference images if provided (for first view)
-        if reference_images and not previous_response_id:
-            logger.info(f"Including {len(reference_images[:3])} reference images")
-            for img_base64 in reference_images[:3]:  # Limit to 3 images
-                # Ensure proper data URL format
-                if not img_base64.startswith("data:"):
-                    img_base64 = f"data:image/jpeg;base64,{img_base64}"
-
-                input_content.append({
-                    "type": "input_image",
-                    "image_url": img_base64
-                })
+        # if reference_images and not previous_response_id:
+        #     logger.info(f"Including {len(reference_images[:3])} reference images")
+        #     for img_base64 in reference_images[:3]:  # Limit to 3 images
+        #         # Ensure proper data URL format
+        #         if not img_base64.startswith("data:"):
+        #             img_base64 = f"data:image/jpeg;base64,{img_base64}"
+        #
+        #         input_content.append({
+        #             "type": "input_image",
+        #             "image_url": img_base64
+        #         })
 
         # Add text prompt
         input_content.append({
