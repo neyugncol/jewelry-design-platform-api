@@ -5,9 +5,11 @@ import json
 import logging
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.schemas.jewelry import JewelryProduct, JewelryDesign
+from app.utils.file_utils import FileUtils
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -23,8 +25,8 @@ class ProductRecommendation(BaseModel):
 class RecommendationOutput(BaseModel):
     """Schema for recommendation output from AI."""
     recommendations: list[ProductRecommendation] = Field(
-        description="List of product recommendations sorted by similarity (top 3-5)",
-        max_length=5
+        description="List of product recommendations sorted by similarity (top 3)",
+        max_length=3
     )
 
 
@@ -106,25 +108,33 @@ class JewelryRecommendationAgent:
 
     async def recommend(
         self,
+        db: Session,
         design: JewelryDesign,
-        top_k: int = 5,
+        user_id: Optional[str] = None,
+        top_k: int = 3,
         min_similarity: float = 0.3
     ) -> list[JewelryProduct]:
         """
         Recommend similar products based on a jewelry design.
 
         Uses LLM to analyze the design and compare with all available products,
-        returning the top-k most similar products.
+        returning the top 3 most similar products. Product images are saved to
+        file service and returned as file IDs.
 
         Args:
+            db: Database session for file service
             design: The jewelry design to find similar products for
-            top_k: Maximum number of recommendations to return (default: 5)
+            user_id: Optional user ID for file ownership
+            top_k: Maximum number of recommendations to return (default: 3, max: 3)
             min_similarity: Minimum similarity threshold (0.0-1.0, default: 0.3)
 
         Returns:
-            List of JewelryProduct objects sorted by similarity (most similar first).
+            List of JewelryProduct objects (max 3) sorted by similarity with images as file IDs.
             Returns empty list if no products meet the minimum similarity threshold.
         """
+        # Enforce max 3 products
+        top_k = min(top_k, 3)
+
         logger.info(f"Starting recommendation for design: {design.name}")
         logger.info(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
         logger.info(f"Available products in catalog: {len(self.products)}")
@@ -197,13 +207,75 @@ class JewelryRecommendationAgent:
             if rec.similarity_score >= min_similarity:
                 if rec.product_id in product_dict:
                     product = product_dict[rec.product_id]
-                    similar_products.append(product)
+
+                    # Process product images: save to file service and replace with file IDs
+                    product_with_file_ids = await self._process_product_images(
+                        db=db,
+                        product=product,
+                        user_id=user_id
+                    )
+
+                    similar_products.append(product_with_file_ids)
                     logger.info(f"Recommended: {product.name} (similarity: {rec.similarity_score:.2f})")
                 else:
                     logger.warning(f"Product ID {rec.product_id} not found in catalog")
 
         logger.info(f"Returning {len(similar_products)} recommended products")
         return similar_products
+
+    async def _process_product_images(
+        self,
+        db: Session,
+        product: JewelryProduct,
+        user_id: Optional[str] = None
+    ) -> JewelryProduct:
+        """
+        Process product images: save to file service and return product with file IDs.
+
+        Args:
+            db: Database session
+            product: Product with base64 images
+            user_id: User ID for file ownership
+
+        Returns:
+            Product with images as file IDs
+        """
+        if not product.images:
+            return product
+
+        # Save each image to file service
+        file_ids = []
+        for idx, image_data in enumerate(product.images):
+            try:
+                # Check if already a file ID (8 chars, alphanumeric)
+                if len(image_data) == 8 and image_data.replace('-', '').replace('_', '').isalnum():
+                    # Already a file ID, keep it
+                    file_ids.append(image_data)
+                    logger.info(f"Product {product.id} image {idx} already has file ID: {image_data}")
+                    continue
+
+                # Save base64 image to file service
+                filename = f"{product.id}_image_{idx}.jpg"
+                file_id = FileUtils.save_base64_to_file_service(
+                    db=db,
+                    base64_data=image_data,
+                    filename=filename,
+                    content_type="image/jpeg",
+                    user_id=user_id
+                )
+                file_ids.append(file_id)
+                logger.info(f"Saved product {product.id} image {idx} with file ID: {file_id}")
+
+            except Exception as e:
+                logger.error(f"Failed to save product image {idx} for {product.id}: {e}")
+                # Continue with other images even if one fails
+                continue
+
+        # Create new product with file IDs
+        product_dict = product.model_dump()
+        product_dict['images'] = file_ids
+
+        return JewelryProduct(**product_dict)
 
     def _build_recommendation_prompt(
         self,

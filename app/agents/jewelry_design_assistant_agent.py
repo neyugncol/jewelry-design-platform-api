@@ -802,28 +802,27 @@ class JewelryDesignAssistantAgent:
             # Create JewelryDesignArtifact from concept design
             design_data = result.get("design")
             if design_data:
-                # Cache images and get IDs
+                # Images are already file IDs (if any) - no need to cache
                 images = design_data.get("images", [])
-                image_ids = self._cache_images(images) if images else []
 
-                # Ensure all required fields are present (no IDs)
+                # Ensure all required fields are present
                 design_dict = {
                     "name": design_data["name"],
                     "description": design_data["description"],
                     "properties": design_data["properties"],
-                    "images": image_ids,  # Store image IDs, not data
+                    "images": images,  # Already file IDs
                     "three_d_model": design_data.get("three_d_model")
                 }
 
-                # Create artifact (no ID)
+                # Create artifact
                 artifact = {
                     "type": "design",
                     "design": design_dict
                 }
 
-                # Cache as current artifact (with image IDs for LLM)
+                # Cache as current artifact
                 self.current_artifact = artifact
-                logger.info(f"Cached design artifact: {design_data['name']} with {len(image_ids)} images")
+                logger.info(f"Cached design artifact: {design_data['name']} with {len(images)} images")
 
                 return artifact
 
@@ -831,18 +830,13 @@ class JewelryDesignAssistantAgent:
             # Create ProductRecommendationArtifact from recommendations
             products = result.get("products", [])
             if products:
-                # Cache images for each product and replace with IDs
-                products_with_ids = []
-                for product in products:
-                    product_copy = product.copy()
-                    if product_copy.get("images"):
-                        product_copy["images"] = self._cache_images(product_copy["images"])
-                    products_with_ids.append(product_copy)
+                # Products already have images as file IDs from recommendation agent
+                # No need to cache - just use directly
 
-                # Create artifact (no ID)
+                # Create artifact
                 artifact = {
                     "type": "recommendation",
-                    "products": products_with_ids
+                    "products": products
                 }
 
                 # Cache as current artifact
@@ -1356,19 +1350,22 @@ class JewelryDesignAssistantAgent:
 
     async def _recommend_products_tool(
         self,
-        top_k: int = 5,
+        top_k: int = 3,
         min_similarity: float = 0.3
     ) -> dict[str, Any]:
         """
         Tool implementation for recommending products.
 
         Args:
-            top_k: Number of recommendations
+            top_k: Number of recommendations (max 3)
             min_similarity: Minimum similarity threshold
 
         Returns:
-            Dict with success status and products list
+            Dict with success status and products list (with file IDs for images)
         """
+        # Enforce max 3 products
+        top_k = min(top_k, 3)
+
         logger.info(f"Starting product recommendation for current design")
         logger.info(f"Parameters: top_k={top_k}, min_similarity={min_similarity}")
 
@@ -1398,14 +1395,16 @@ class JewelryDesignAssistantAgent:
                 three_d_model=design_dict.get("three_d_model")
             )
 
-            # Get recommendations
+            # Get recommendations (products now have images as file IDs)
             recommended_products = await self.recommendation_agent.recommend(
+                db=self.db,
                 design=design,
+                user_id=self.user_id,
                 top_k=top_k,
                 min_similarity=min_similarity
             )
 
-            # Convert products to dicts
+            # Convert products to dicts (images are already file IDs)
             products_list = [product.model_dump() for product in recommended_products]
             logger.info(f"Found {len(products_list)} recommended products")
 
