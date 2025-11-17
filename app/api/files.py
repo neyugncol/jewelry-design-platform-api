@@ -1,4 +1,5 @@
 """File API endpoints."""
+from urllib.parse import quote
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File as FastAPIFile
 from fastapi.responses import StreamingResponse
@@ -102,13 +103,14 @@ async def download_file(
     """
     try:
         file_record, content = FileService.load_file(db, short_id)
+        encoded = quote(file_record.filename)
 
         # Create streaming response
         return StreamingResponse(
             io.BytesIO(content),
             media_type=file_record.content_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{file_record.filename}"'
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}"
             }
         )
 

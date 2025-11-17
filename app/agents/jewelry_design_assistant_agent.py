@@ -247,7 +247,7 @@ Call `respond_to_user` with:
           "occasion": "engagement",
           "weight": 3.2
         },
-        "images": ["https://pnj.io/products/ring1-front.jpg"],
+        "images": ["TefGAYHL"],
         "three_d_model": null
       },
       {
@@ -266,7 +266,7 @@ Call `respond_to_user` with:
           "occasion": "engagement",
           "weight": 3.5
         },
-        "images": ["https://pnj.io/products/ring2-front.jpg"],
+        "images": ["ew6sv3Gi"],
         "three_d_model": null
       }
       // ... 3 more products with full details
@@ -337,9 +337,9 @@ Call `respond_to_user` with COMPLETE updated design:
         "inspiration": "Based on PNJ's Elegant Solitaire, customized with a larger diamond"
       },
       "images": [
-        "img_a1b2c3d4",
-        "img_e5f6g7h8",
-        "img_i9j0k1l2"
+        "ew6sv3Gi",
+        "TefGAYHL",
+        "GvpRrSx8"
       ],
       "three_d_model": null
     }
@@ -374,9 +374,9 @@ Call `respond_to_user` with same complete artifact:
         "inspiration": "Based on PNJ's Elegant Solitaire, customized with a larger diamond"
       },
       "images": [
-        "img_a1b2c3d4",
-        "img_e5f6g7h8",
-        "img_i9j0k1l2"
+        "ew6sv3Gi",
+        "TefGAYHL",
+        "GvpRrSx8"
       ],
       "three_d_model": null
     }
@@ -508,7 +508,7 @@ class JewelryDesignAssistantAgent:
         self.current_messages = messages
 
         # Extract current artifact state from last message
-        current_artifact = self._get_current_artifact(messages)
+        current_artifact = self._get_current_artifact(messages) or self.current_artifact
         if current_artifact:
             artifact_type = current_artifact.get("type")
             logger.info(f"Current artifact state: {artifact_type}")
@@ -563,10 +563,15 @@ class JewelryDesignAssistantAgent:
                 if message.tool_calls:
                     has_function_calls = True
                     for tool_call in message.tool_calls:
+                        parsed_args = json.loads(tool_call.function.arguments)
+                        if tool_call.function.name == "respond_to_user":
+                            # Ensure artifact is included in respond_to_user calls
+                            if "artifact" not in parsed_args or parsed_args["artifact"] is None:
+                                parsed_args["artifact"] = current_artifact
                         function_calls.append({
                             "id": tool_call.id,
                             "name": tool_call.function.name,
-                            "args": json.loads(tool_call.function.arguments)
+                            "args": parsed_args
                         })
                         logger.info(f"Tool call detected: {tool_call.function.name}")
                         logger.info(f"Tool arguments: {tool_call.function.arguments}")
@@ -631,6 +636,10 @@ class JewelryDesignAssistantAgent:
                         # Validate and return the response
                         try:
                             assistant_response = AssistantResponse(**tool_args)
+                        except Exception as e:
+                            logger.error(f"Error parsing respond_to_user arguments: {e}")
+                            tool_args["artifact"] = current_artifact
+                            assistant_response = AssistantResponse(**tool_args)
 
                             # Convert artifact: LLM gives us image IDs, we need to convert to image data
                             artifact_dict = None
@@ -653,30 +662,30 @@ class JewelryDesignAssistantAgent:
                             logger.info(f"Artifact type: {final_result['artifact'].get('type') if final_result['artifact'] else 'null'}")
                             return final_result
 
-                        except Exception as e:
-                            logger.error(f"Failed to validate respond_to_user arguments: {e}")
-
-                            # Try to recover artifact from current cache or use raw arguments
-                            artifact_from_args = tool_args.get("artifact")
-                            recovered_artifact = None
-
-                            if artifact_from_args and isinstance(artifact_from_args, dict):
-                                # Try to convert image IDs to data if present
-                                recovered_artifact = self._artifact_ids_to_images(artifact_from_args)
-                                logger.warning(f"Using unvalidated artifact from arguments (converted image IDs)")
-                            elif self.current_artifact:
-                                # Fall back to cached current artifact
-                                recovered_artifact = self.current_artifact
-                                logger.info(f"Recovered artifact from current cache")
-
-                            # Fallback to raw arguments with recovered artifact
-                            return {
-                                "message": tool_args.get("message", "I apologize, but I encountered an error generating my response."),
-                                "artifact": recovered_artifact or current_artifact,
-                                "tool_calls": all_tool_calls,
-                                "iterations": iterations,
-                                "error": str(e)
-                            }
+                        # except Exception as e:
+                        #     logger.error(f"Failed to validate respond_to_user arguments: {e}")
+                        #
+                        #     # Try to recover artifact from current cache or use raw arguments
+                        #     artifact_from_args = tool_args.get("artifact")
+                        #     recovered_artifact = None
+                        #
+                        #     if artifact_from_args and isinstance(artifact_from_args, dict):
+                        #         # Try to convert image IDs to data if present
+                        #         recovered_artifact = self._artifact_ids_to_images(artifact_from_args)
+                        #         logger.warning(f"Using unvalidated artifact from arguments (converted image IDs)")
+                        #     elif self.current_artifact:
+                        #         # Fall back to cached current artifact
+                        #         recovered_artifact = self.current_artifact
+                        #         logger.info(f"Recovered artifact from current cache")
+                        #
+                        #     # Fallback to raw arguments with recovered artifact
+                        #     return {
+                        #         "message": tool_args.get("message", "I apologize, but I encountered an error generating my response."),
+                        #         "artifact": self.current_artifact,
+                        #         "tool_calls": all_tool_calls,
+                        #         "iterations": iterations,
+                        #         "error": str(e)
+                        #     }
 
                     # Execute tool (with await for async tools)
                     if tool_name in self.tool_implementations:
