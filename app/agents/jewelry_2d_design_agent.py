@@ -38,22 +38,22 @@ class JewelryDesign2DOutput(BaseModel):
 class Jewelry2DDesignAgent:
     """Agent for generating 2D product images of jewelry designs using OpenAI Responses API."""
 
-    # Define the views to generate
+    # Define the views to generate - aligned with professional product photography
     VIEWS = [
+        {
+            "type": "hero",
+            "name": "Hero Angle (3/4 View)",
+            "description": "3/4 perspective at 30-40 degrees from front, elevated 15-20 degrees above horizontal, showcasing both face and partial side in a dynamic composition"
+        },
         {
             "type": "front",
             "name": "Front View",
-            "description": "showcasing the primary design elements, face-on perspective, centered composition"
+            "description": "straight-on frontal perspective, camera perpendicular to the main face, centered composition showing primary design elements head-on"
         },
         {
-            "type": "side",
-            "name": "Side View",
-            "description": "displaying the profile and depth, 90-degree angle from the front, showing thickness and dimension"
-        },
-        {
-            "type": "top",
-            "name": "Top View",
-            "description": "revealing the overhead perspective, bird's eye view, showing the full layout and proportions"
+            "type": "profile",
+            "name": "Profile View",
+            "description": "complete 90-degree side profile, showing full depth, thickness, band/chain height, and dimensional structure from the side"
         }
     ]
 
@@ -399,6 +399,7 @@ class Jewelry2DDesignAgent:
         Returns:
             Formatted prompt string for image generation
         """
+        props = design.properties
         prompt_parts = []
 
         # Context about maintaining consistency
@@ -409,11 +410,18 @@ class Jewelry2DDesignAgent:
                 f"{', '.join(previous_views)} view(s).\n"
                 f"Keep IDENTICAL: design details, materials, colors, gemstones, proportions, and overall style.\n"
                 f"Change ONLY: camera angle/perspective to show the {view_config['type']} view.\n"
+                f"IMPORTANT: Background must be pure white (RGB 255, 255, 255), clean and professional.\n"
             )
         else:
             prompt_parts.append(
-                f"DRAW a professional product photograph showing the {view_config['name']} "
+                f"CREATE a professional e-commerce product photograph showing the {view_config['name']} "
                 f"of this jewelry design.\n"
+                f"CRITICAL REQUIREMENTS:\n"
+                f"• PURE WHITE BACKGROUND (RGB 255, 255, 255) - clean, professional product photography\n"
+                f"• Professional product photography quality matching real jewelry e-commerce standards\n"
+                f"• Jewelry centered with appropriate margins and clean presentation\n"
+                f"• Photorealistic rendering with proper materials, lighting, and details\n"
+                f"• PNG format with high-quality rendering for e-commerce use\n"
             )
 
         # Add base description with all specifications
@@ -427,17 +435,65 @@ class Jewelry2DDesignAgent:
         )
 
         # View-specific camera and composition requirements
+        camera_angles = {
+            "hero": "Position camera at 30-40° horizontal angle from center front, elevated 15-20° above horizontal plane, creating a dynamic 3/4 view that shows both the primary face and partial side profile",
+            "front": "Position camera perpendicular to the main face/front of the jewelry, completely straight-on with no angular deviation, perfectly centered and level",
+            "profile": "Position camera at exactly 90° to the side, showing the complete profile view with camera level to the jewelry's horizontal plane"
+        }
+
         prompt_parts.append(
             f"\n📷 CAMERA & COMPOSITION:\n"
+            f"• Camera Angle: {camera_angles.get(view_config['type'], view_config['description'])}\n"
             f"• Perspective: {view_config['description']}\n"
-            f"• Framing: Center the jewelry in the frame with appropriate margins\n"
-            f"• Focus: Sharp focus across entire jewelry piece\n"
-            f"• Depth of field: Shallow to emphasize the jewelry, blur background\n"
-            f"• Composition: Follow rule of thirds for visual appeal\n"
+            f"• Framing: Center the jewelry in the frame with balanced margins on all sides\n"
+            f"• Focus: Razor-sharp focus across the entire jewelry piece, no soft areas\n"
+            f"• Depth of field: Shallow depth of field to isolate jewelry from background\n"
+            f"• Orientation: Maintain consistent jewelry orientation for professional product photography\n"
         )
 
+        # Add jewelry-type-specific orientation guidance for each view
+        if props.jewelry_type:
+            jewelry_orientation = {
+                "ring": {
+                    "hero": "Position ring at 30-40° angle showing the face/top with center stone prominent, slight tilt to show band thickness and side pavé",
+                    "front": "Show ring face-on with center stone centered, band edges visible on both sides, perfectly symmetrical",
+                    "profile": "Complete side profile showing band thickness, setting height, stone protrusion, and how ring sits"
+                },
+                "necklace": {
+                    "hero": "Display necklace in gentle curve layout, pendant centered, showing both chain detail and pendant face at 3/4 angle",
+                    "front": "Show pendant face-on centered, with chain flowing naturally on both sides in symmetrical arc",
+                    "profile": "Side view showing pendant thickness, bail attachment, chain profile, and how it would hang on neck"
+                },
+                "bracelet": {
+                    "hero": "Arrange bracelet in gentle circular/curved layout showing links and clasp, 3/4 view displaying dimension",
+                    "front": "Display bracelet in circular or curved arrangement, face-on showing all decorative elements symmetrically",
+                    "profile": "Side view showing link thickness, connection mechanisms, height, and how bracelet curves"
+                },
+                "bangle": {
+                    "hero": "Position bangle at 30-40° angle showing the face and inner curve, highlighting decorative elements and form",
+                    "front": "Show bangle face-on in circular form, displaying all surface decorations and opening if present",
+                    "profile": "Complete side profile showing cross-section, thickness, inner diameter, and structural design"
+                },
+                "earring": {
+                    "hero": "Display earring at 3/4 angle showing the face and depth, as it would appear when worn, highlighting main features",
+                    "front": "Show earring face-on as it appears when looking directly at someone wearing it, perfectly centered",
+                    "profile": "Side view showing earring thickness, back mechanism, how it protrudes, and attachment method"
+                },
+                "anklet": {
+                    "hero": "Arrange anklet in gentle curve showing chain, charms, and clasp at 3/4 angle with depth visible",
+                    "front": "Display anklet in curved arrangement face-on, showing all decorative elements and chain pattern",
+                    "profile": "Side view showing chain thickness, charm depth, clasp mechanism, and how it drapes"
+                }
+            }
+
+            jewelry_type = props.jewelry_type.value
+            if jewelry_type in jewelry_orientation and view_config["type"] in jewelry_orientation[jewelry_type]:
+                prompt_parts.append(
+                    f"\n💍 {jewelry_type.upper()} ORIENTATION FOR THIS VIEW:\n"
+                    f"• {jewelry_orientation[jewelry_type][view_config['type']]}\n"
+                )
+
         # Material rendering requirements
-        props = design.properties
         prompt_parts.append(f"\n💎 MATERIAL RENDERING:\n")
 
         # Metal rendering
@@ -466,22 +522,28 @@ class Jewelry2DDesignAgent:
 
         # Lighting requirements
         prompt_parts.append(
-            f"\n💡 LIGHTING SETUP:\n"
-            f"• Primary light: Soft, diffused from 45° angle to show form and depth\n"
-            f"• Fill light: Gentle illumination to reduce harsh shadows\n"
-            f"• Accent light: Highlights on metal surfaces for luster\n"
-            f"• Gemstone lighting: Strategic positioning to maximize sparkle and fire\n"
-            f"• Shadow: Subtle, natural-looking shadow beneath jewelry for grounding\n"
-            f"• Reflections: Controlled reflections showing quality without distractions\n"
+            f"\n💡 PROFESSIONAL PRODUCT PHOTOGRAPHY LIGHTING:\n"
+            f"• Studio Setup: Professional jewelry photography studio lighting with softboxes\n"
+            f"• Key Light: Soft, diffused primary light from 45° angle showing dimensional form\n"
+            f"• Fill Light: Gentle illumination from opposite side reducing harsh shadows, maintaining detail\n"
+            f"• Accent/Rim Light: Precise highlights on metal edges creating separation and luster\n"
+            f"• Gemstone Lighting: Strategic positioning maximizing brilliance, fire, and internal sparkle\n"
+            f"• Even Illumination: Consistent lighting across the piece, no hot spots or dead zones\n"
+            f"• Reflections: Controlled, minimal reflections showing quality without distraction\n"
+            f"• Shadow: Soft contact shadow directly beneath jewelry (semi-transparent, natural)\n"
+            f"• White Balance: Accurate color temperature for true material representation\n"
         )
 
         # Background and environment
         prompt_parts.append(
             f"\n🎨 BACKGROUND & ENVIRONMENT:\n"
-            f"• Background: Pure white (RGB 255,255,255) or subtle gradient\n"
-            f"• Surface: Reflective surface creating subtle mirror effect (optional)\n"
-            f"• Context: No distracting elements, jewelry is sole focus\n"
+            f"• Background: Pure white (RGB 255, 255, 255) - clean, professional product photography background\n"
+            f"• Isolation: Jewelry is the sole focus with no distracting elements\n"
+            f"• Shadow: Subtle, soft contact shadow directly beneath jewelry for grounding\n"
+            f"• Surface: Clean white surface or subtle white gradient if needed\n"
+            f"• Context: Zero distracting elements, jewelry is the ONLY subject\n"
             f"• Cleanliness: Pristine, dust-free, professional studio quality\n"
+            f"• Format: PNG with high-quality rendering for e-commerce use\n"
         )
 
         # Detail requirements based on jewelry type
@@ -543,23 +605,26 @@ class Jewelry2DDesignAgent:
 
         # View-specific emphasis
         view_emphasis = {
+            "hero": [
+                "This is the PRIMARY marketing/hero view - make it CAPTIVATING and sell the design",
+                "Show the jewelry exactly like professional e-commerce product photography",
+                "Emphasize the most attractive design features in one dynamic angle",
+                "Display both frontal beauty AND dimensional depth in this single view",
+                "This angle should make customers want to purchase - prioritize visual appeal"
+            ],
             "front": [
-                "This is the PRIMARY marketing view - make it captivating",
-                "Emphasize the most attractive design features",
-                "Show the jewelry as customers will first see it",
-                "Balance all elements for visual harmony"
+                "Pure frontal view for showcasing symmetry and face design",
+                "Show the jewelry exactly as it appears when looking directly at it",
+                "Display all frontal design elements with perfect clarity",
+                "Essential for customers to see the primary design straight-on",
+                "Maintain perfect symmetry and centered alignment"
             ],
-            "side": [
-                "CRITICAL for 3D modeling - show ALL depth dimensions",
-                "Display band/chain thickness accurately",
-                "Reveal setting height and stone protrusion",
-                "Show how the piece has volume and weight"
-            ],
-            "top": [
-                "ESSENTIAL for 3D modeling - show complete overhead layout",
-                "Display exact shape and proportions from above",
-                "Reveal symmetry and geometric patterns",
-                "Show structural elements and spacing accurately"
+            "profile": [
+                "CRITICAL side profile for understanding dimensions and depth",
+                "Show complete side silhouette including all thickness and height",
+                "Display band/chain thickness, setting height, and stone protrusion accurately",
+                "Reveal how the piece has volume, weight, and 3D structure",
+                "Essential for 3D modeling and understanding the physical form"
             ]
         }
 
